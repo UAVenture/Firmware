@@ -702,7 +702,7 @@ FixedwingAttitudeControl::task_main()
 			/* load local copies */
 			orb_copy(ORB_ID(vehicle_attitude), _att_sub, &_att);
 
-			if (_vehicle_status.is_vtol) {
+			if (false) {	// FireFly6 is not a tailsitter
 				/* vehicle type is VTOL, need to modify attitude!
 				 * The following modification to the attitude is vehicle specific and in this case applies
 				 *  to tail-sitter models !!!
