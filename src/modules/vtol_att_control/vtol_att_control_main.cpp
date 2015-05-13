@@ -223,6 +223,7 @@ private:
 	void 		fill_mc_att_rates_sp();
 	void 		fill_fw_att_rates_sp();
 	void 		set_idle_fw();
+	void		set_max_fw();
 	void 		set_idle_mc();
 	void 		scale_mc_output();
 	void 		calc_tot_airspeed();			// estimated airspeed seen by elevons
@@ -651,6 +652,40 @@ void VtolAttitudeControl::set_idle_fw()
 }
 
 /**
+* Kill rear motors for the FireFLY6 when in fw mode.
+*/
+void
+VtolAttitudeControl::set_max_fw()
+{
+	int ret;
+	unsigned servo_count;
+	char *dev = PWM_OUTPUT0_DEVICE_PATH;
+	int fd = open(dev, 0);
+
+	if (fd < 0) {err(1, "can't open %s", dev);}
+
+	ret = ioctl(fd, PWM_SERVO_GET_COUNT, (unsigned long)&servo_count);
+	unsigned pwm_value = _params.idle_pwm_mc;
+	struct pwm_output_values pwm_values;
+	memset(&pwm_values, 0, sizeof(pwm_values));
+
+	for (unsigned i = 0; i < _params.vtol_motor_count; i++) {
+		if (i == 2 || i == 3) {
+			pwm_values.values[i] = pwm_value;
+		} else {
+			pwm_values.values[i] = 2000;
+		}
+		pwm_values.channel_count = _params.vtol_motor_count;
+	}
+
+	ret = ioctl(fd, PWM_SERVO_SET_MAX_PWM, (long unsigned int)&pwm_values);
+
+	if (ret != OK) {errx(ret, "failed setting max values");}
+
+	close(fd);
+}
+
+/**
 * Adjust idle speed for mc mode.
 */
 void VtolAttitudeControl::set_idle_mc()
@@ -941,6 +976,7 @@ void VtolAttitudeControl::task_main()
 
 				fill_fw_att_control_output();
 				fill_fw_att_rates_sp();
+				set_max_fw();
 
 				/* Only publish if the proper mode(s) are enabled */
 				if(_v_control_mode.flag_control_attitude_enabled ||
