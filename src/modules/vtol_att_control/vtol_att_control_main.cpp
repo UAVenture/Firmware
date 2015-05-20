@@ -581,6 +581,8 @@ void VtolAttitudeControl::fill_mc_att_control_output()
 		_actuators_out_1.control[0] = _actuators_mc_in.control[2];	//roll elevon
 		_actuators_out_1.control[1] = _actuators_mc_in.control[1];	//pitch elevon
 	}
+
+	_tilt_control = _params.tilt_mc +  fabsf(_params.tilt_fw - _params.tilt_mc)*math::constrain(_manual_control_sp.aux2,0.0f,1.0f);
 	_actuators_out_1.control[4] = _tilt_control;	// for tilt-rotor control
 }
 
@@ -897,7 +899,7 @@ void VtolAttitudeControl::task_main()
 		vehicle_airspeed_poll();
 		vehicle_battery_poll();
 
-		update_vtol_state();
+		//update_vtol_state();
 
 		if ((_manual_control_sp.aux1 < 0.0f && _vtol_schedule.failsave) ||
 			_vtol_schedule.flight_mode == MC_MODE	||
