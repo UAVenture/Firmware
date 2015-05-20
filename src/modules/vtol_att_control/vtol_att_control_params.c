@@ -165,6 +165,17 @@ PARAM_DEFINE_FLOAT(VT_TRANS_DUR,3.0f);
 PARAM_DEFINE_FLOAT(VT_TILT_MC,0.0f);
 
 /**
+ * Position of tilt servo in transition mode
+ *
+ * Position of tilt servo in transition mode
+ *
+ * @min 0.0
+ * @max 1
+ * @group VTOL Attitude Control
+ */
+PARAM_DEFINE_FLOAT(VT_TILT_TRANS,0.3f);
+
+/**
  * Position of tilt servo in fw mode
  *
  * Position of tilt servo in fw mode
@@ -174,6 +185,17 @@ PARAM_DEFINE_FLOAT(VT_TILT_MC,0.0f);
  * @group VTOL Attitude Control
  */
 PARAM_DEFINE_FLOAT(VT_TILT_FW,1.0f);
+
+/**
+ * Transition airspeed
+ *
+ * Airspeed at which we can switch to fw mode
+ *
+ * @min 0.0
+ * @max 20
+ * @group VTOL Attitude Control
+ */
+PARAM_DEFINE_FLOAT(VT_ARSP_TRANS,10.0f);
 
 /**
  * Lock elevons in multicopter mode

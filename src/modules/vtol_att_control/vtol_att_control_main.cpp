@@ -154,7 +154,9 @@ private:
 		float arsp_lp_gain;			// total airspeed estimate low pass gain
 		float transition_duration;
 		float tilt_mc;
+		float tilt_transition;
 		float tilt_fw;
+		float airspeed_trans;
 		int elevons_mc_lock;			// lock elevons in multicopter mode
 	} _params;
 
@@ -171,7 +173,9 @@ private:
 		param_t arsp_lp_gain;
 		param_t transition_duration;
 		param_t tilt_mc;
+		param_t tilt_transition;
 		param_t tilt_fw;
+		param_t airspeed_trans;
 		param_t elevons_mc_lock;
 	} _params_handles;
 
@@ -310,7 +314,9 @@ VtolAttitudeControl::VtolAttitudeControl() :
 	_params_handles.arsp_lp_gain = param_find("VT_ARSP_LP_GAIN");
 	_params_handles.transition_duration = param_find("VT_TRANS_DUR");
 	_params_handles.tilt_mc = param_find("VT_TILT_MC");
+	_params_handles.tilt_transition = param_find("VT_TILT_TRANS");
 	_params_handles.tilt_fw = param_find("VT_TILT_FW");
+	_params_handles.airspeed_trans = param_find("VT_ARSP_TRANS");
 	_params_handles.elevons_mc_lock = param_find("VT_ELEV_MC_LOCK");
 
 	/* fetch initial parameter values */
@@ -553,9 +559,17 @@ VtolAttitudeControl::parameters_update()
 	param_get(_params_handles.tilt_mc, &v);
 	_params.tilt_mc = v;
 
+	/* vtol tilt mechanism position in transition mode */
+	param_get(_params_handles.tilt_transition, &v);
+	_params.tilt_transition = v;
+
 	/* vtol tilt mechanism position in fw mode */
 	param_get(_params_handles.tilt_fw, &v);
 	_params.tilt_fw = v;
+
+	/* vtol airspeed at which it is ok to switch to fw mode */
+	param_get(_params_handles.airspeed_trans, &v);
+	_params.airspeed_trans = v;
 
 	/* vtol lock elevons in multicopter */
 	param_get(_params_handles.elevons_mc_lock, &l);
@@ -582,7 +596,6 @@ void VtolAttitudeControl::fill_mc_att_control_output()
 		_actuators_out_1.control[1] = _actuators_mc_in.control[1];	//pitch elevon
 	}
 
-	_tilt_control = _params.tilt_mc +  fabsf(_params.tilt_fw - _params.tilt_mc)*math::constrain(_manual_control_sp.aux2,0.0f,1.0f);
 	_actuators_out_1.control[4] = _tilt_control;	// for tilt-rotor control
 }
 
@@ -669,7 +682,7 @@ VtolAttitudeControl::set_max_fw()
 	if (fd < 0) {err(1, "can't open %s", dev);}
 
 	ret = ioctl(fd, PWM_SERVO_GET_COUNT, (unsigned long)&servo_count);
-	unsigned pwm_value = _params.idle_pwm_mc;
+	unsigned pwm_value = 950;
 	struct pwm_output_values pwm_values;
 	memset(&pwm_values, 0, sizeof(pwm_values));
 
@@ -765,41 +778,28 @@ void VtolAttitudeControl::calc_tot_airspeed() {
 }
 
 void VtolAttitudeControl::update_vtol_state() {
-	// first check if user has activated failsave
-	if(_manual_control_sp.aux2 > 0.0f) {
-		_vtol_schedule.failsave = true;
-	} else {
-		_vtol_schedule.failsave = false;
-	}
-
-	if(_manual_control_sp.aux1 > 0.0f && _vtol_schedule.flight_mode == MC_MODE) {
-		// user dares a front-transition, let him crash
+	if (_manual_control_sp.aux1 < 0.0f) {
+		// mc mode
+		_vtol_schedule.flight_mode = MC_MODE;
+		_vtol_schedule.flight_mode_prev = MC_MODE;
+		_tilt_control = _params.tilt_mc;
+	} else if (_manual_control_sp.aux1 >= 0.0f && _vtol_schedule.flight_mode == MC_MODE) {
+		// instant of doeing a front-transition
 		_vtol_schedule.flight_mode_prev = _vtol_schedule.flight_mode;
 		_vtol_schedule.flight_mode = TRANSITION_MODE;
 		_vtol_schedule.transition_start = hrt_absolute_time();
-	}
-	else if (_manual_control_sp.aux1 < 0.0f && _vtol_schedule.flight_mode == FW_MODE) {
-		// user wants a back-transition, funny that he hasn't crashed on the front-transition???
-		_vtol_schedule.flight_mode_prev = _vtol_schedule.flight_mode;
-		_vtol_schedule.flight_mode = TRANSITION_MODE;
-		_vtol_schedule.transition_start = hrt_absolute_time();
-	}
-	else if (_vtol_schedule.flight_mode == TRANSITION_MODE &&
-		(float)hrt_elapsed_time(&_vtol_schedule.transition_start) >= _params.transition_duration*1000000.0f )
-	{
-		// transition is done assign correct flight mode
-		_vtol_schedule.flight_mode = _vtol_schedule.flight_mode_prev == MC_MODE ? FW_MODE : MC_MODE;
-		_vtol_schedule.flight_mode_prev = TRANSITION_MODE;
-	}
-}
-
-void VtolAttitudeControl::update_transition_mechanism() {
-	// check if we are doeing a front- or backtransition
-	if(_vtol_schedule.flight_mode_prev == MC_MODE) {
-		_tilt_control = _params.tilt_mc +  fabsf(_params.tilt_fw - _params.tilt_mc)*(float)hrt_elapsed_time(&_vtol_schedule.transition_start)/(_params.transition_duration*1000000.0f);
-	}
-	else if(_vtol_schedule.flight_mode_prev == FW_MODE) {
-		_tilt_control = _params.tilt_fw -  fabsf(_params.tilt_fw - _params.tilt_mc)*(float)hrt_elapsed_time(&_vtol_schedule.transition_start)/(_params.transition_duration*1000000.0f);
+	} else if (_vtol_schedule.flight_mode == TRANSITION_MODE) {
+		// tilt rotors forward up to certain angle
+		if (_tilt_control <= _params.tilt_transition) {
+			_tilt_control = _params.tilt_mc +  fabsf(_params.tilt_transition - _params.tilt_mc)*(float)hrt_elapsed_time(&_vtol_schedule.transition_start)/(_params.transition_duration*1000000.0f);
+		}
+		// check if we have reached airspeed to switch to fw mode
+		if (_airspeed.true_airspeed_m_s >= _params.airspeed_trans) {
+			_vtol_schedule.flight_mode_prev = _vtol_schedule.flight_mode;
+			_vtol_schedule.flight_mode = FW_MODE;
+			// rotate rotors forward
+			_tilt_control = _params.tilt_fw;
+		}
 	}
 }
 
@@ -899,11 +899,10 @@ void VtolAttitudeControl::task_main()
 		vehicle_airspeed_poll();
 		vehicle_battery_poll();
 
-		//update_vtol_state();
+		update_vtol_state();
 
-		if ((_manual_control_sp.aux1 < 0.0f && _vtol_schedule.failsave) ||
-			_vtol_schedule.flight_mode == MC_MODE	||
-			(_vtol_schedule.flight_mode == TRANSITION_MODE && _vtol_schedule.flight_mode_prev == MC_MODE)) {		/* vehicle is in mc mode */
+		if (_vtol_schedule.flight_mode == MC_MODE ||
+			_vtol_schedule.flight_mode == TRANSITION_MODE) {		/* vehicle is in mc mode */
 
 			_vtol_vehicle_status.vtol_in_rw_mode = true;
 
@@ -919,16 +918,6 @@ void VtolAttitudeControl::task_main()
 
 				// scale pitch control with total airspeed
 				//scale_mc_output();
-
-				// if we are in a transition and failsave is not active we need to schedule the servo
-				if(_vtol_schedule.flight_mode == TRANSITION_MODE && !_vtol_schedule.failsave) {
-					update_transition_mechanism();
-				}
-				else {
-					// make sure that the transition servo is in the right position
-					_tilt_control = _params.tilt_mc;
-				}
-
 
 				fill_mc_att_control_output();
 				fill_mc_att_rates_sp();
@@ -954,9 +943,7 @@ void VtolAttitudeControl::task_main()
 			}
 		}
 
-		if ((_manual_control_sp.aux1 >= 0.0f && _vtol_schedule.failsave) ||
-			_vtol_schedule.flight_mode == FW_MODE	||
-			(_vtol_schedule.flight_mode == TRANSITION_MODE && _vtol_schedule.flight_mode_prev == FW_MODE)) {	/* vehicle is in fw mode */
+		if (_vtol_schedule.flight_mode == FW_MODE) {	/* vehicle is in fw mode */
 
 			_vtol_vehicle_status.vtol_in_rw_mode = false;
 
@@ -968,15 +955,6 @@ void VtolAttitudeControl::task_main()
 			if (fds[1].revents & POLLIN) {		/* got data from fw_att_controller */
 				orb_copy(ORB_ID(actuator_controls_virtual_fw), _actuator_inputs_fw, &_actuators_fw_in);
 				vehicle_manual_poll();	//update remote input
-
-				// if we are in a transition and failsave is not active we need to schedule the servo
-				if(_vtol_schedule.flight_mode == TRANSITION_MODE && !_vtol_schedule.failsave) {
-					update_transition_mechanism();
-				}
-				else {
-					// make sure that the transition servo is in the right position
-					_tilt_control = _params.tilt_fw;
-				}
 
 				fill_fw_att_control_output();
 				fill_fw_att_rates_sp();
