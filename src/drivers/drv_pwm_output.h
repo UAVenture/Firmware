@@ -94,7 +94,7 @@ __BEGIN_DECLS
 /**
  * Lowest PWM allowed as the maximum PWM
  */
-#define PWM_LOWEST_MAX 1400
+#define PWM_LOWEST_MAX 900
 
 /**
  * Do not output a channel with this value
