@@ -704,11 +704,6 @@ MulticopterAttitudeControl::control_attitude(float dt)
 void
 MulticopterAttitudeControl::control_attitude_rates(float dt)
 {
-	/* reset integral if disarmed */
-	if (!_armed.armed || !_vehicle_status.is_rotary_wing) {
-		_rates_int.zero();
-	}
-
 	/* current body angular rates */
 	math::Vector<3> rates;
 	rates(0) = _v_att.rollspeed;
@@ -811,6 +806,18 @@ MulticopterAttitudeControl::task_main()
 			vehicle_manual_poll();
 			vehicle_status_poll();
 			vehicle_motor_limits_poll();
+
+			// reset previous rates if not in rotary wing mode
+			if (!_vehicle_status.is_rotary_wing) {
+				_rates_prev(0) = _v_att.rollspeed;
+				_rates_prev(1) = _v_att.pitchspeed;
+				_rates_prev(2) = _v_att.yawspeed;
+			}
+
+			// reset integral if disarmed or not in rotary wing mode
+			if (!_armed.armed || !_vehicle_status.is_rotary_wing) {
+				_rates_int.zero();
+			}
 
 			if (_v_control_mode.flag_control_attitude_enabled) {
 				control_attitude(dt);
