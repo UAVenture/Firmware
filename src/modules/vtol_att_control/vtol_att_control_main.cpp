@@ -186,6 +186,7 @@ private:
 	 * for fixed wings we want to have an idle speed of zero since we do not want
 	 * to waste energy when gliding. */
 	bool flag_idle_mc;		//false = "idle is set for fixed wing mode"; true = "idle is set for multicopter mode"
+	bool flag_max_mc;
 	unsigned _motor_count;	// number of motors
 	float _airspeed_tot;
 	float _tilt_control;
@@ -228,6 +229,7 @@ private:
 	void 		fill_fw_att_rates_sp();
 	void 		set_idle_fw();
 	void		set_max_fw();
+	void 		set_max_mc();
 	void 		set_idle_mc();
 	void 		scale_mc_output();
 	void 		calc_tot_airspeed();			// estimated airspeed seen by elevons
@@ -271,6 +273,7 @@ VtolAttitudeControl::VtolAttitudeControl() :
 {
 
 	flag_idle_mc = true;
+	flag_max_mc = true;
 	_airspeed_tot = 0.0f;
 	_tilt_control = 0.0f;
 
@@ -702,6 +705,32 @@ VtolAttitudeControl::set_max_fw()
 	close(fd);
 }
 
+void
+VtolAttitudeControl::set_max_mc()
+{
+	int ret;
+	unsigned servo_count;
+	char *dev = PWM_OUTPUT0_DEVICE_PATH;
+	int fd = open(dev, 0);
+
+	if (fd < 0) {err(1, "can't open %s", dev);}
+
+	ret = ioctl(fd, PWM_SERVO_GET_COUNT, (unsigned long)&servo_count);
+	struct pwm_output_values pwm_values;
+	memset(&pwm_values, 0, sizeof(pwm_values));
+
+	for (unsigned i = 0; i < _params.vtol_motor_count; i++) {
+		pwm_values.values[i] = 2000;
+		pwm_values.channel_count = _params.vtol_motor_count;
+	}
+
+	ret = ioctl(fd, PWM_SERVO_SET_MAX_PWM, (long unsigned int)&pwm_values);
+
+	if (ret != OK) {errx(ret, "failed setting max values");}
+
+	close(fd);
+}
+
 /**
 * Adjust idle speed for mc mode.
 */
@@ -911,8 +940,14 @@ void VtolAttitudeControl::task_main()
 				flag_idle_mc = true;
 			}
 
+			if (!flag_max_mc) {
+				set_max_mc();
+				flag_max_mc = true;
+			}
+
 			/* got data from mc_att_controller */
 			if (fds[0].revents & POLLIN) {
+
 				vehicle_manual_poll();	/* update remote input */
 				orb_copy(ORB_ID(actuator_controls_virtual_mc), _actuator_inputs_mc, &_actuators_mc_in);
 
@@ -952,13 +987,17 @@ void VtolAttitudeControl::task_main()
 				flag_idle_mc = false;
 			}
 
+			if (flag_max_mc) {
+				set_max_fw();
+				flag_max_mc = false;
+			}
+
 			if (fds[1].revents & POLLIN) {		/* got data from fw_att_controller */
 				orb_copy(ORB_ID(actuator_controls_virtual_fw), _actuator_inputs_fw, &_actuators_fw_in);
 				vehicle_manual_poll();	//update remote input
 
 				fill_fw_att_control_output();
 				fill_fw_att_rates_sp();
-				set_max_fw();
 
 				/* Only publish if the proper mode(s) are enabled */
 				if(_v_control_mode.flag_control_attitude_enabled ||
