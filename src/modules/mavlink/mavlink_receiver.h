@@ -73,6 +73,7 @@
 #include <uORB/topics/battery_status.h>
 #include <uORB/topics/vehicle_force_setpoint.h>
 #include <uORB/topics/time_offset.h>
+#include <uORB/topics/distance_sensor.h>
 
 #include "mavlink_ftp.h"
 
@@ -134,6 +135,7 @@ private:
 	void handle_message_hil_sensor(mavlink_message_t *msg);
 	void handle_message_hil_gps(mavlink_message_t *msg);
 	void handle_message_hil_state_quaternion(mavlink_message_t *msg);
+	void handle_message_distance_sensor(mavlink_message_t *msg);
 
 	void *receive_thread(void *arg);
 
@@ -164,7 +166,7 @@ private:
 	orb_advert_t _battery_pub;
 	orb_advert_t _cmd_pub;
 	orb_advert_t _flow_pub;
-	orb_advert_t _range_pub;
+	orb_advert_t _distance_sensor_pub;
 	orb_advert_t _offboard_control_mode_pub;
 	orb_advert_t _actuator_controls_pub;
 	orb_advert_t _global_vel_sp_pub;
@@ -190,6 +192,7 @@ private:
 	struct vehicle_rates_setpoint_s _rates_sp;
 	double _time_offset_avg_alpha;
 	uint64_t _time_offset;
+	int	_orb_class_instance;
 
 	/* do not allow copying this class */
 	MavlinkReceiver(const MavlinkReceiver &);

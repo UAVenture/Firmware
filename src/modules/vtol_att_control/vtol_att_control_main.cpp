@@ -44,7 +44,7 @@
  *
  */
 
-#include <nuttx/config.h>
+#include <px4_config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -152,6 +152,12 @@ private:
 		float power_max;			// maximum power of one engine
 		float prop_eff;				// factor to calculate prop efficiency
 		float arsp_lp_gain;			// total airspeed estimate low pass gain
+		float transition_duration;
+		float tilt_mc;
+		float tilt_transition;
+		float tilt_fw;
+		float airspeed_trans;
+		int elevons_mc_lock;			// lock elevons in multicopter mode
 	} _params;
 
 	struct {
@@ -165,6 +171,12 @@ private:
 		param_t power_max;
 		param_t prop_eff;
 		param_t arsp_lp_gain;
+		param_t transition_duration;
+		param_t tilt_mc;
+		param_t tilt_transition;
+		param_t tilt_fw;
+		param_t airspeed_trans;
+		param_t elevons_mc_lock;
 	} _params_handles;
 
 	perf_counter_t	_loop_perf;			/**< loop performance counter */
@@ -174,9 +186,26 @@ private:
 	 * for fixed wings we want to have an idle speed of zero since we do not want
 	 * to waste energy when gliding. */
 	bool flag_idle_mc;		//false = "idle is set for fixed wing mode"; true = "idle is set for multicopter mode"
+	bool flag_max_mc;
 	unsigned _motor_count;	// number of motors
 	float _airspeed_tot;
 	float _tilt_control;
+	float _tilt_mc;
+	float _tilt_fw;
+
+	enum vtol_mode {
+		MC_MODE = 0,
+		TRANSITION_MODE = 1,
+		FW_MODE = 2
+	};
+
+	struct {
+		bool failsave;	// this allows the user to force any mode he wants (using a switch)
+		vtol_mode flight_mode;	// indicates in which mode the vehicle is in
+		vtol_mode flight_mode_prev;	// previous mode we were in
+		hrt_abstime transition_start;	// at what time did we start a transition (front- or backtransition)
+	}_vtol_schedule;
+
 //*****************Member functions***********************************************************************
 
 	void 		task_main();	//main task
@@ -199,9 +228,13 @@ private:
 	void 		fill_mc_att_rates_sp();
 	void 		fill_fw_att_rates_sp();
 	void 		set_idle_fw();
+	void		set_max_fw();
+	void 		set_max_mc();
 	void 		set_idle_mc();
 	void 		scale_mc_output();
 	void 		calc_tot_airspeed();			// estimated airspeed seen by elevons
+	void 		update_vtol_state();
+	void 		update_transition_mechanism();
 };
 
 namespace VTOL_att_control
@@ -230,16 +263,17 @@ VtolAttitudeControl::VtolAttitudeControl() :
 	_battery_status_sub(-1),
 
 	//init publication handlers
-	_actuators_0_pub(-1),
-	_actuators_1_pub(-1),
-	_vtol_vehicle_status_pub(-1),
-	_v_rates_sp_pub(-1),
+	_actuators_0_pub(nullptr),
+	_actuators_1_pub(nullptr),
+	_vtol_vehicle_status_pub(nullptr),
+	_v_rates_sp_pub(nullptr),
 
 	_loop_perf(perf_alloc(PC_ELAPSED, "vtol_att_control")),
 	_nonfinite_input_perf(perf_alloc(PC_COUNT, "vtol att control nonfinite input"))
 {
 
 	flag_idle_mc = true;
+	flag_max_mc = true;
 	_airspeed_tot = 0.0f;
 	_tilt_control = 0.0f;
 
@@ -262,6 +296,11 @@ VtolAttitudeControl::VtolAttitudeControl() :
 	memset(&_airspeed,0,sizeof(_airspeed));
 	memset(&_batt_status,0,sizeof(_batt_status));
 
+	_vtol_schedule.failsave = true;
+	_vtol_schedule.flight_mode = MC_MODE;
+	_vtol_schedule.flight_mode_prev = MC_MODE;
+	_vtol_schedule.transition_start = 0;
+
 	_params.idle_pwm_mc = PWM_LOWEST_MIN;
 	_params.vtol_motor_count = 0;
 	_params.vtol_fw_permanent_stab = 0;
@@ -276,6 +315,12 @@ VtolAttitudeControl::VtolAttitudeControl() :
 	_params_handles.power_max = param_find("VT_POWER_MAX");
 	_params_handles.prop_eff = param_find("VT_PROP_EFF");
 	_params_handles.arsp_lp_gain = param_find("VT_ARSP_LP_GAIN");
+	_params_handles.transition_duration = param_find("VT_TRANS_DUR");
+	_params_handles.tilt_mc = param_find("VT_TILT_MC");
+	_params_handles.tilt_transition = param_find("VT_TILT_TRANS");
+	_params_handles.tilt_fw = param_find("VT_TILT_FW");
+	_params_handles.airspeed_trans = param_find("VT_ARSP_TRANS");
+	_params_handles.elevons_mc_lock = param_find("VT_ELEV_MC_LOCK");
 
 	/* fetch initial parameter values */
 	parameters_update();
@@ -470,6 +515,8 @@ int
 VtolAttitudeControl::parameters_update()
 {
 	float v;
+	int l;
+
 	/* idle pwm for mc mode */
 	param_get(_params_handles.idle_pwm_mc, &_params.idle_pwm_mc);
 
@@ -507,6 +554,30 @@ VtolAttitudeControl::parameters_update()
 	param_get(_params_handles.arsp_lp_gain, &v);
 	_params.arsp_lp_gain = v;
 
+	/* vtol duration of a transition */
+	param_get(_params_handles.transition_duration, &v);
+	_params.transition_duration = math::constrain(v,1.0f,5.0f);
+
+	/* vtol tilt mechanism position in mc mode */
+	param_get(_params_handles.tilt_mc, &v);
+	_params.tilt_mc = v;
+
+	/* vtol tilt mechanism position in transition mode */
+	param_get(_params_handles.tilt_transition, &v);
+	_params.tilt_transition = v;
+
+	/* vtol tilt mechanism position in fw mode */
+	param_get(_params_handles.tilt_fw, &v);
+	_params.tilt_fw = v;
+
+	/* vtol airspeed at which it is ok to switch to fw mode */
+	param_get(_params_handles.airspeed_trans, &v);
+	_params.airspeed_trans = v;
+
+	/* vtol lock elevons in multicopter */
+	param_get(_params_handles.elevons_mc_lock, &l);
+	_params.elevons_mc_lock = l;
+
 	return OK;
 }
 
@@ -519,9 +590,15 @@ void VtolAttitudeControl::fill_mc_att_control_output()
 	_actuators_out_0.control[1] = _actuators_mc_in.control[1];
 	_actuators_out_0.control[2] = _actuators_mc_in.control[2];
 	_actuators_out_0.control[3] = _actuators_mc_in.control[3];
-	//set neutral position for elevons
-	_actuators_out_1.control[0] = _actuators_mc_in.control[2];	//roll elevon
-	_actuators_out_1.control[1] = _actuators_mc_in.control[1];;	//pitch elevon
+
+	if(_params.elevons_mc_lock == 1) {
+		_actuators_out_1.control[0] = 0;	//roll elevon locked
+		_actuators_out_1.control[1] = 0;	//pitch elevon locked
+	} else {
+		_actuators_out_1.control[0] = _actuators_mc_in.control[2];	//roll elevon
+		_actuators_out_1.control[1] = _actuators_mc_in.control[1];	//pitch elevon
+	}
+
 	_actuators_out_1.control[4] = _tilt_control;	// for tilt-rotor control
 }
 
@@ -541,6 +618,7 @@ void VtolAttitudeControl::fill_fw_att_control_output()
 	// unused now but still logged
 	_actuators_out_1.control[2] = _actuators_fw_in.control[2];	// yaw
 	_actuators_out_1.control[3] = _actuators_fw_in.control[3];	// throttle
+	_actuators_out_1.control[4] = _tilt_control;
 }
 
 /**
@@ -589,6 +667,66 @@ void VtolAttitudeControl::set_idle_fw()
 	ret = ioctl(fd, PWM_SERVO_SET_MIN_PWM, (long unsigned int)&pwm_values);
 
 	if (ret != OK) {errx(ret, "failed setting min values");}
+
+	close(fd);
+}
+
+/**
+* Kill rear motors for the FireFLY6 when in fw mode.
+*/
+void
+VtolAttitudeControl::set_max_fw()
+{
+	int ret;
+	unsigned servo_count;
+	char *dev = PWM_OUTPUT0_DEVICE_PATH;
+	int fd = open(dev, 0);
+
+	if (fd < 0) {err(1, "can't open %s", dev);}
+
+	ret = ioctl(fd, PWM_SERVO_GET_COUNT, (unsigned long)&servo_count);
+	unsigned pwm_value = 950;
+	struct pwm_output_values pwm_values;
+	memset(&pwm_values, 0, sizeof(pwm_values));
+
+	for (unsigned i = 0; i < _params.vtol_motor_count; i++) {
+		if (i == 2 || i == 3) {
+			pwm_values.values[i] = pwm_value;
+		} else {
+			pwm_values.values[i] = 2000;
+		}
+		pwm_values.channel_count = _params.vtol_motor_count;
+	}
+
+	ret = ioctl(fd, PWM_SERVO_SET_MAX_PWM, (long unsigned int)&pwm_values);
+
+	if (ret != OK) {errx(ret, "failed setting max values");}
+
+	close(fd);
+}
+
+void
+VtolAttitudeControl::set_max_mc()
+{
+	int ret;
+	unsigned servo_count;
+	char *dev = PWM_OUTPUT0_DEVICE_PATH;
+	int fd = open(dev, 0);
+
+	if (fd < 0) {err(1, "can't open %s", dev);}
+
+	ret = ioctl(fd, PWM_SERVO_GET_COUNT, (unsigned long)&servo_count);
+	struct pwm_output_values pwm_values;
+	memset(&pwm_values, 0, sizeof(pwm_values));
+
+	for (unsigned i = 0; i < _params.vtol_motor_count; i++) {
+		pwm_values.values[i] = 2000;
+		pwm_values.channel_count = _params.vtol_motor_count;
+	}
+
+	ret = ioctl(fd, PWM_SERVO_SET_MAX_PWM, (long unsigned int)&pwm_values);
+
+	if (ret != OK) {errx(ret, "failed setting max values");}
 
 	close(fd);
 }
@@ -668,6 +806,32 @@ void VtolAttitudeControl::calc_tot_airspeed() {
 	_airspeed_tot = _params.arsp_lp_gain * (_airspeed_tot - airspeed_raw) + airspeed_raw;
 }
 
+void VtolAttitudeControl::update_vtol_state() {
+	if (_manual_control_sp.aux1 < 0.0f) {
+		// mc mode
+		_vtol_schedule.flight_mode = MC_MODE;
+		_vtol_schedule.flight_mode_prev = MC_MODE;
+		_tilt_control = _params.tilt_mc;
+	} else if (_manual_control_sp.aux1 >= 0.0f && _vtol_schedule.flight_mode == MC_MODE) {
+		// instant of doeing a front-transition
+		_vtol_schedule.flight_mode_prev = _vtol_schedule.flight_mode;
+		_vtol_schedule.flight_mode = TRANSITION_MODE;
+		_vtol_schedule.transition_start = hrt_absolute_time();
+	} else if (_vtol_schedule.flight_mode == TRANSITION_MODE) {
+		// tilt rotors forward up to certain angle
+		if (_tilt_control <= _params.tilt_transition) {
+			_tilt_control = _params.tilt_mc +  fabsf(_params.tilt_transition - _params.tilt_mc)*(float)hrt_elapsed_time(&_vtol_schedule.transition_start)/(_params.transition_duration*1000000.0f);
+		}
+		// check if we have reached airspeed to switch to fw mode
+		if (_airspeed.true_airspeed_m_s >= _params.airspeed_trans) {
+			_vtol_schedule.flight_mode_prev = _vtol_schedule.flight_mode;
+			_vtol_schedule.flight_mode = FW_MODE;
+			// rotate rotors forward
+			_tilt_control = _params.tilt_fw;
+		}
+	}
+}
+
 void
 VtolAttitudeControl::task_main_trampoline(int argc, char *argv[])
 {
@@ -716,7 +880,7 @@ void VtolAttitudeControl::task_main()
 
 	while (!_task_should_exit) {
 		/*Advertise/Publish vtol vehicle status*/
-		if (_vtol_vehicle_status_pub > 0) {
+		if (_vtol_vehicle_status_pub != nullptr) {
 			orb_publish(ORB_ID(vtol_vehicle_status), _vtol_vehicle_status_pub, &_vtol_vehicle_status);
 
 		} else {
@@ -764,8 +928,11 @@ void VtolAttitudeControl::task_main()
 		vehicle_airspeed_poll();
 		vehicle_battery_poll();
 
+		update_vtol_state();
 
-		if (_manual_control_sp.aux1 < 0.0f) {		/* vehicle is in mc mode */
+		if (_vtol_schedule.flight_mode == MC_MODE ||
+			_vtol_schedule.flight_mode == TRANSITION_MODE) {		/* vehicle is in mc mode */
+
 			_vtol_vehicle_status.vtol_in_rw_mode = true;
 
 			if (!flag_idle_mc) {	/* we want to adjust idle speed for mc mode */
@@ -773,13 +940,19 @@ void VtolAttitudeControl::task_main()
 				flag_idle_mc = true;
 			}
 
+			if (!flag_max_mc) {
+				set_max_mc();
+				flag_max_mc = true;
+			}
+
 			/* got data from mc_att_controller */
 			if (fds[0].revents & POLLIN) {
+
 				vehicle_manual_poll();	/* update remote input */
 				orb_copy(ORB_ID(actuator_controls_virtual_mc), _actuator_inputs_mc, &_actuators_mc_in);
 
 				// scale pitch control with total airspeed
-				scale_mc_output();
+				//scale_mc_output();
 
 				fill_mc_att_control_output();
 				fill_mc_att_rates_sp();
@@ -788,14 +961,14 @@ void VtolAttitudeControl::task_main()
 				if(_v_control_mode.flag_control_attitude_enabled ||
 				   _v_control_mode.flag_control_rates_enabled)
 				{
-					if (_actuators_0_pub > 0) {
+					if (_actuators_0_pub != nullptr) {
 						orb_publish(ORB_ID(actuator_controls_0), _actuators_0_pub, &_actuators_out_0);
 
 					} else {
 						_actuators_0_pub = orb_advertise(ORB_ID(actuator_controls_0), &_actuators_out_0);
 					}
 
-					if (_actuators_1_pub > 0) {
+					if (_actuators_1_pub != nullptr) {
 						orb_publish(ORB_ID(actuator_controls_1), _actuators_1_pub, &_actuators_out_1);
 
 					} else {
@@ -805,12 +978,18 @@ void VtolAttitudeControl::task_main()
 			}
 		}
 
-		if (_manual_control_sp.aux1 >= 0.0f) {			/* vehicle is in fw mode */
+		if (_vtol_schedule.flight_mode == FW_MODE) {	/* vehicle is in fw mode */
+
 			_vtol_vehicle_status.vtol_in_rw_mode = false;
 
 			if (flag_idle_mc) {	/* we want to adjust idle speed for fixed wing mode */
 				set_idle_fw();
 				flag_idle_mc = false;
+			}
+
+			if (flag_max_mc) {
+				set_max_fw();
+				flag_max_mc = false;
 			}
 
 			if (fds[1].revents & POLLIN) {		/* got data from fw_att_controller */
@@ -825,14 +1004,14 @@ void VtolAttitudeControl::task_main()
 				   _v_control_mode.flag_control_rates_enabled ||
 				   _v_control_mode.flag_control_manual_enabled)
 				{
-					if (_actuators_0_pub > 0) {
+					if (_actuators_0_pub != nullptr) {
 						orb_publish(ORB_ID(actuator_controls_0), _actuators_0_pub, &_actuators_out_0);
 
 					} else {
 						_actuators_0_pub = orb_advertise(ORB_ID(actuator_controls_0), &_actuators_out_0);
 					}
 
-					if (_actuators_1_pub > 0) {
+					if (_actuators_1_pub != nullptr) {
 						orb_publish(ORB_ID(actuator_controls_1), _actuators_1_pub, &_actuators_out_1);
 
 					} else {
@@ -843,7 +1022,7 @@ void VtolAttitudeControl::task_main()
 		}
 
 		// publish the attitude rates setpoint
-		if(_v_rates_sp_pub > 0) {
+		if(_v_rates_sp_pub != nullptr) {
 			orb_publish(ORB_ID(vehicle_rates_setpoint),_v_rates_sp_pub,&_v_rates_sp);
 		}
 		else {
@@ -862,7 +1041,7 @@ VtolAttitudeControl::start()
 	ASSERT(_control_task == -1);
 
 	/* start the task */
-	_control_task = task_spawn_cmd("vtol_att_control",
+	_control_task = px4_task_spawn_cmd("vtol_att_control",
 				       SCHED_DEFAULT,
 				       SCHED_PRIORITY_MAX - 10,
 				       2048,

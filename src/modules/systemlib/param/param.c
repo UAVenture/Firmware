@@ -41,7 +41,9 @@
  * and background parameter saving.
  */
 
-#include <debug.h>
+//#include <debug.h>
+#include <px4_defines.h>
+#include <px4_posix.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -66,6 +68,14 @@
 # define debug(fmt, args...)		do { warnx(fmt, ##args); } while(0)
 #else
 # define debug(fmt, args...)		do { } while(0)
+#endif
+
+#ifdef __PX4_QURT
+#define PARAM_OPEN	px4_open
+#define PARAM_CLOSE	px4_close
+#else
+#define PARAM_OPEN	open
+#define PARAM_CLOSE	close
 #endif
 
 /**
@@ -120,7 +130,7 @@ const UT_icd	param_icd = {sizeof(struct param_wbuf_s), NULL, NULL, NULL};
 ORB_DEFINE(parameter_update, struct parameter_update_s);
 
 /** parameter update topic handle */
-static orb_advert_t param_topic = -1;
+static orb_advert_t param_topic = NULL;
 
 static void param_set_used_internal(param_t param);
 
@@ -223,7 +233,7 @@ param_notify_changes(void)
 	 * If we don't have a handle to our topic, create one now; otherwise
 	 * just publish.
 	 */
-	if (param_topic == -1) {
+	if (param_topic == NULL) {
 		param_topic = orb_advertise(ORB_ID(parameter_update), &pup);
 
 	} else {
@@ -705,7 +715,7 @@ param_save_default(void)
 	const char *filename = param_get_default_file();
 
 	/* write parameters to temp file */
-	fd = open(filename, O_WRONLY | O_CREAT);
+	fd = PARAM_OPEN(filename, O_WRONLY | O_CREAT, 0x777);
 
 	if (fd < 0) {
 		warn("failed to open param file: %s", filename);
@@ -718,7 +728,7 @@ param_save_default(void)
 		warnx("failed to write parameters to file: %s", filename);
 	}
 
-	close(fd);
+	PARAM_CLOSE(fd);
 
 	return res;
 }
@@ -729,7 +739,8 @@ param_save_default(void)
 int
 param_load_default(void)
 {
-	int fd_load = open(param_get_default_file(), O_RDONLY);
+	warnx("param_load_default\n");
+	int fd_load = PARAM_OPEN(param_get_default_file(), O_RDONLY);
 
 	if (fd_load < 0) {
 		/* no parameter file is OK, otherwise this is an error */
@@ -742,7 +753,7 @@ param_load_default(void)
 	}
 
 	int result = param_load(fd_load);
-	close(fd_load);
+	PARAM_CLOSE(fd_load);
 
 	if (result != 0) {
 		warn("error reading parameters from '%s'", param_get_default_file());

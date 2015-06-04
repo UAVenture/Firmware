@@ -43,7 +43,7 @@
  * @author Thomas Gubler <thomasgubler@gmail.com>
  */
 
-#include <nuttx/config.h>
+#include <px4_config.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -108,10 +108,10 @@ Navigator::Navigator() :
 	_onboard_mission_sub(-1),
 	_offboard_mission_sub(-1),
 	_param_update_sub(-1),
-	_pos_sp_triplet_pub(-1),
-	_mission_result_pub(-1),
-	_geofence_result_pub(-1),
-	_att_sp_pub(-1),
+	_pos_sp_triplet_pub(nullptr),
+	_mission_result_pub(nullptr),
+	_geofence_result_pub(nullptr),
+	_att_sp_pub(nullptr),
 	_vstatus{},
 	_control_mode{},
 	_global_pos{},
@@ -514,7 +514,7 @@ Navigator::start()
 	ASSERT(_navigator_task == -1);
 
 	/* start the task */
-	_navigator_task = task_spawn_cmd("navigator",
+	_navigator_task = px4_task_spawn_cmd("navigator",
 					 SCHED_DEFAULT,
 					 SCHED_PRIORITY_DEFAULT + 20,
 					 1700,
@@ -563,7 +563,7 @@ Navigator::publish_position_setpoint_triplet()
 	_pos_sp_triplet.nav_state = _vstatus.nav_state;
 
 	/* lazily publish the position setpoint triplet only once available */
-	if (_pos_sp_triplet_pub > 0) {
+	if (_pos_sp_triplet_pub != nullptr) {
 		orb_publish(ORB_ID(position_setpoint_triplet), _pos_sp_triplet_pub, &_pos_sp_triplet);
 
 	} else {
@@ -641,7 +641,7 @@ void
 Navigator::publish_mission_result()
 {
 	/* lazily publish the mission result only once available */
-	if (_mission_result_pub > 0) {
+	if (_mission_result_pub != nullptr) {
 		/* publish mission result */
 		orb_publish(ORB_ID(mission_result), _mission_result_pub, &_mission_result);
 
@@ -663,7 +663,7 @@ Navigator::publish_geofence_result()
 {
 
 	/* lazily publish the geofence result only once available */
-	if (_geofence_result_pub > 0) {
+	if (_geofence_result_pub != nullptr) {
 		/* publish mission result */
 		orb_publish(ORB_ID(geofence_result), _geofence_result_pub, &_geofence_result);
 
@@ -677,7 +677,7 @@ void
 Navigator::publish_att_sp()
 {
 	/* lazily publish the attitude sp only once available */
-	if (_att_sp_pub > 0) {
+	if (_att_sp_pub != nullptr) {
 		/* publish att sp*/
 		orb_publish(ORB_ID(vehicle_attitude_setpoint), _att_sp_pub, &_att_sp);
 

@@ -1,7 +1,6 @@
 /****************************************************************************
  *
  *   Copyright (C) 2012 PX4 Development Team. All rights reserved.
- *   Author: @author Lorenz Meier <lm@inf.ethz.ch>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,82 +32,81 @@
  ****************************************************************************/
 
 /**
- * @file systemlib.c
- * Implementation of commonly used low-level system-call like functions.
+ * @file sim.h
+ *
+ * Base class for devices on simulation bus.
  */
 
-#include <nuttx/config.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <fcntl.h>
-#include <sched.h>
-#include <signal.h>
-#include <unistd.h>
-#include <float.h>
-#include <string.h>
+#pragma once 
 
-#include <sys/stat.h>
-#include <sys/types.h>
+#include "vdev.h"
 
-#include <stm32_pwr.h>
-
-#include "systemlib.h"
-
-// Didn't seem right to include up_internal.h, so direct extern instead.
-extern void up_systemreset(void) noreturn_function;
-
-void
-systemreset(bool to_bootloader)
+namespace device __EXPORT
 {
-	if (to_bootloader) {
-		stm32_pwr_enablebkp();
 
-		/* XXX wow, this is evil - write a magic number into backup register zero */
-		*(uint32_t *)0x40002850 = 0xb007b007;
-	}
-
-	up_systemreset();
-
-	/* lock up here */
-	while (true);
-}
-
-static void kill_task(FAR struct tcb_s *tcb, FAR void *arg);
-
-void killall()
+/**
+ * Abstract class for character device on SIM
+ */
+class __EXPORT SIM : public Device
 {
-//	printf("Sending SIGUSR1 to all processes now\n");
 
-	/* iterate through all tasks and send kill signal */
-	sched_foreach(kill_task, NULL);
-}
+public:
 
-static void kill_task(FAR struct tcb_s *tcb, FAR void *arg)
-{
-	kill(tcb->pid, SIGUSR1);
-}
+	/**
+	 * Get the address
+	 */
+	int16_t		get_address() const { return _address; }
 
-int task_spawn_cmd(const char *name, int scheduler, int priority, int stack_size, main_t entry, char *const argv[])
-{
-	int pid;
+protected:
+	/**
+	 * The number of times a read or write operation will be retried on
+	 * error.
+	 */
+	unsigned		_retries;
 
-	sched_lock();
+	/**
+	 * The SIM bus number the device is attached to.
+	 */
+	int			_bus;
 
-	/* create the task */
-	pid = task_create(name, priority, stack_size, entry, argv);
+	/**
+	 * @ Constructor
+	 *
+	 * @param name		Driver name
+	 * @param devname	Device node name
+	 * @param bus		SIM bus on which the device lives
+	 * @param address	SIM bus address, or zero if set_address will be used
+	 */
+	SIM(const char *name,
+	    const char *devname,
+	    int bus,
+	    uint16_t address);
+	virtual ~SIM();
 
-	if (pid > 0) {
+	virtual int	init();
 
-		/* configure the scheduler */
-		struct sched_param param;
+	/**
+	 * Perform an SIM transaction to the device.
+	 *
+	 * At least one of send_len and recv_len must be non-zero.
+	 *
+	 * @param send		Pointer to bytes to send.
+	 * @param send_len	Number of bytes to send.
+	 * @param recv		Pointer to buffer for bytes received.
+	 * @param recv_len	Number of bytes to receive.
+	 * @return		OK if the transfer was successful, -errno
+	 *			otherwise.
+	 */
+	virtual int	transfer(const uint8_t *send, unsigned send_len,
+					 uint8_t *recv, unsigned recv_len);
 
-		param.sched_priority = priority;
-		sched_setscheduler(pid, scheduler, &param);
+private:
+	uint16_t		_address;
+	const char *		_devname;
 
-		/* XXX do any other private task accounting here before the task starts */
-	}
+	SIM(const device::SIM&);
+	SIM operator=(const device::SIM&);
+};
 
-	sched_unlock();
+} // namespace device
 
-	return pid;
-}
