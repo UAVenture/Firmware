@@ -911,6 +911,9 @@ FixedwingAttitudeControl::task_main()
 					att_sp.yaw_body = 0.0f - _parameters.trim_yaw;
 					att_sp.thrust = throttle_sp;
 
+					memset(&_att_sp.R_body[0], 0, sizeof(_att_sp.R_body));
+					memset(&_att_sp.q_d[0], 0, sizeof(_att_sp.q_d));
+
 					/* lazily publish the setpoint only once available */
 					if (_attitude_sp_pub != nullptr && !_vehicle_status.is_rotary_wing) {
 						/* publish the attitude setpoint */

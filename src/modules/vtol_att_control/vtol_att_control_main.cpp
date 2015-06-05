@@ -152,7 +152,8 @@ private:
 		float power_max;			// maximum power of one engine
 		float prop_eff;				// factor to calculate prop efficiency
 		float arsp_lp_gain;			// total airspeed estimate low pass gain
-		float transition_duration;
+		float front_trans_dur;
+		float back_trans_dur;
 		float tilt_mc;
 		float tilt_transition;
 		float tilt_fw;
@@ -171,7 +172,8 @@ private:
 		param_t power_max;
 		param_t prop_eff;
 		param_t arsp_lp_gain;
-		param_t transition_duration;
+		param_t front_trans_dur;
+		param_t back_trans_dur;
 		param_t tilt_mc;
 		param_t tilt_transition;
 		param_t tilt_fw;
@@ -195,8 +197,9 @@ private:
 
 	enum vtol_mode {
 		MC_MODE = 0,
-		TRANSITION_MODE = 1,
-		FW_MODE = 2
+		TRANSITION_FRONT = 1,
+		TRANSITION_BACK = 2,
+		FW_MODE = 3
 	};
 
 	struct {
@@ -228,7 +231,7 @@ private:
 	void 		fill_mc_att_rates_sp();
 	void 		fill_fw_att_rates_sp();
 	void 		set_idle_fw();
-	void		set_max_fw();
+	void		set_max_fw(unsigned pwm_value);
 	void 		set_max_mc();
 	void 		set_idle_mc();
 	void 		scale_mc_output();
@@ -315,7 +318,8 @@ VtolAttitudeControl::VtolAttitudeControl() :
 	_params_handles.power_max = param_find("VT_POWER_MAX");
 	_params_handles.prop_eff = param_find("VT_PROP_EFF");
 	_params_handles.arsp_lp_gain = param_find("VT_ARSP_LP_GAIN");
-	_params_handles.transition_duration = param_find("VT_TRANS_DUR");
+	_params_handles.front_trans_dur = param_find("VT_F_TRANS_DUR");
+	_params_handles.back_trans_dur = param_find("VT_B_TRANS_DUR");
 	_params_handles.tilt_mc = param_find("VT_TILT_MC");
 	_params_handles.tilt_transition = param_find("VT_TILT_TRANS");
 	_params_handles.tilt_fw = param_find("VT_TILT_FW");
@@ -554,9 +558,13 @@ VtolAttitudeControl::parameters_update()
 	param_get(_params_handles.arsp_lp_gain, &v);
 	_params.arsp_lp_gain = v;
 
-	/* vtol duration of a transition */
-	param_get(_params_handles.transition_duration, &v);
-	_params.transition_duration = math::constrain(v,1.0f,5.0f);
+	/* vtol duration of a front transition */
+	param_get(_params_handles.front_trans_dur, &v);
+	_params.front_trans_dur = math::constrain(v,1.0f,5.0f);
+
+	/* vtol duration of a back transition */
+	param_get(_params_handles.back_trans_dur, &v);
+	_params.back_trans_dur = math::constrain(v,0.0f,5.0f);
 
 	/* vtol tilt mechanism position in mc mode */
 	param_get(_params_handles.tilt_mc, &v);
@@ -675,7 +683,7 @@ void VtolAttitudeControl::set_idle_fw()
 * Kill rear motors for the FireFLY6 when in fw mode.
 */
 void
-VtolAttitudeControl::set_max_fw()
+VtolAttitudeControl::set_max_fw(unsigned pwm_value)
 {
 	int ret;
 	unsigned servo_count;
@@ -685,7 +693,6 @@ VtolAttitudeControl::set_max_fw()
 	if (fd < 0) {err(1, "can't open %s", dev);}
 
 	ret = ioctl(fd, PWM_SERVO_GET_COUNT, (unsigned long)&servo_count);
-	unsigned pwm_value = 950;
 	struct pwm_output_values pwm_values;
 	memset(&pwm_values, 0, sizeof(pwm_values));
 
@@ -807,28 +814,54 @@ void VtolAttitudeControl::calc_tot_airspeed() {
 }
 
 void VtolAttitudeControl::update_vtol_state() {
-	if (_manual_control_sp.aux1 < 0.0f) {
+	if (_manual_control_sp.aux1 < 0.0f && _vtol_schedule.flight_mode == MC_MODE) {
 		// mc mode
-		_vtol_schedule.flight_mode = MC_MODE;
+		_vtol_schedule.flight_mode 	= MC_MODE;
 		_vtol_schedule.flight_mode_prev = MC_MODE;
-		_tilt_control = _params.tilt_mc;
+		_tilt_control 			= _params.tilt_mc;
+	} else if (_manual_control_sp.aux1 < 0.0f && _vtol_schedule.flight_mode == FW_MODE) {
+		_vtol_schedule.flight_mode_prev = _vtol_schedule.flight_mode;
+		_vtol_schedule.flight_mode 	= TRANSITION_BACK;
+		flag_max_mc 			= true;
+		_vtol_schedule.transition_start = hrt_absolute_time();
 	} else if (_manual_control_sp.aux1 >= 0.0f && _vtol_schedule.flight_mode == MC_MODE) {
 		// instant of doeing a front-transition
 		_vtol_schedule.flight_mode_prev = _vtol_schedule.flight_mode;
-		_vtol_schedule.flight_mode = TRANSITION_MODE;
+		_vtol_schedule.flight_mode 	= TRANSITION_FRONT;
 		_vtol_schedule.transition_start = hrt_absolute_time();
-	} else if (_vtol_schedule.flight_mode == TRANSITION_MODE) {
+	} else if (_manual_control_sp.aux1 < 0.0f && _vtol_schedule.flight_mode == TRANSITION_BACK) {
+		// tilt rotors forward up to certain angle
+		if (_tilt_control > _params.tilt_transition) {
+			_tilt_control = _params.tilt_fw -  fabsf(_params.tilt_fw - _params.tilt_transition)*(float)hrt_elapsed_time(&_vtol_schedule.transition_start)/(_params.back_trans_dur*1000000.0f);
+		} else {
+			// now switch back to mc mode
+			_vtol_schedule.flight_mode 	= MC_MODE;
+			_vtol_schedule.flight_mode_prev = MC_MODE;
+			_tilt_control 			= _params.tilt_mc;
+		}
+	} else if (_vtol_schedule.flight_mode == TRANSITION_FRONT && _manual_control_sp.aux1 > 0.0f) {
 		// tilt rotors forward up to certain angle
 		if (_tilt_control <= _params.tilt_transition) {
-			_tilt_control = _params.tilt_mc +  fabsf(_params.tilt_transition - _params.tilt_mc)*(float)hrt_elapsed_time(&_vtol_schedule.transition_start)/(_params.transition_duration*1000000.0f);
+			_tilt_control = _params.tilt_mc +  fabsf(_params.tilt_transition - _params.tilt_mc)*(float)hrt_elapsed_time(&_vtol_schedule.transition_start)/(_params.front_trans_dur*1000000.0f);
 		}
 		// check if we have reached airspeed to switch to fw mode
 		if (_airspeed.true_airspeed_m_s >= _params.airspeed_trans) {
 			_vtol_schedule.flight_mode_prev = _vtol_schedule.flight_mode;
-			_vtol_schedule.flight_mode = FW_MODE;
+			_vtol_schedule.flight_mode 	= FW_MODE;
 			// rotate rotors forward
-			_tilt_control = _params.tilt_fw;
+			_tilt_control 			= _params.tilt_fw;
 		}
+	} else if (_vtol_schedule.flight_mode == TRANSITION_FRONT && _manual_control_sp.aux1 < 0.0f) {
+		// failsave into mc mode
+		_vtol_schedule.flight_mode = MC_MODE;
+		_vtol_schedule.flight_mode_prev = MC_MODE;
+		_tilt_control = _params.tilt_mc;
+	} else if (_vtol_schedule.flight_mode == TRANSITION_BACK && _manual_control_sp.aux1 > 0.0f) {
+		// failsave into fw mode
+		_vtol_schedule.flight_mode = FW_MODE;
+		_vtol_schedule.flight_mode_prev = FW_MODE;
+		_tilt_control = _params.tilt_fw;
+		flag_max_mc = true;
 	}
 }
 
@@ -931,7 +964,7 @@ void VtolAttitudeControl::task_main()
 		update_vtol_state();
 
 		if (_vtol_schedule.flight_mode == MC_MODE ||
-			_vtol_schedule.flight_mode == TRANSITION_MODE) {		/* vehicle is in mc mode */
+			_vtol_schedule.flight_mode == TRANSITION_FRONT) {		/* vehicle is in mc mode */
 
 			_vtol_vehicle_status.vtol_in_rw_mode = true;
 
@@ -978,7 +1011,7 @@ void VtolAttitudeControl::task_main()
 			}
 		}
 
-		if (_vtol_schedule.flight_mode == FW_MODE) {	/* vehicle is in fw mode */
+		if (_vtol_schedule.flight_mode == FW_MODE || _vtol_schedule.flight_mode == TRANSITION_BACK) {	/* vehicle is in fw mode */
 
 			_vtol_vehicle_status.vtol_in_rw_mode = false;
 
@@ -988,7 +1021,13 @@ void VtolAttitudeControl::task_main()
 			}
 
 			if (flag_max_mc) {
-				set_max_fw();
+				if (_vtol_schedule.flight_mode == TRANSITION_BACK) {
+					set_max_fw(1200);
+					set_idle_mc();
+				} else {
+					set_max_fw(950);
+					set_idle_fw();
+				}
 				flag_max_mc = false;
 			}
 

@@ -143,7 +143,7 @@ PARAM_DEFINE_FLOAT(VT_PROP_EFF,0.0f);
 PARAM_DEFINE_FLOAT(VT_ARSP_LP_GAIN,0.3f);
 
 /**
- * Duration of a transition
+ * Duration of a front transition
  *
  * Time in seconds used for a transition
  *
@@ -151,7 +151,18 @@ PARAM_DEFINE_FLOAT(VT_ARSP_LP_GAIN,0.3f);
  * @max 5
  * @group VTOL Attitude Control
  */
-PARAM_DEFINE_FLOAT(VT_TRANS_DUR,3.0f);
+PARAM_DEFINE_FLOAT(VT_F_TRANS_DUR,3.0f);
+
+/**
+ * Duration of a back transition
+ *
+ * Time in seconds used for a back transition
+ *
+ * @min 0.0
+ * @max 5
+ * @group VTOL Attitude Control
+ */
+PARAM_DEFINE_FLOAT(VT_B_TRANS_DUR,1.0f);
 
 /**
  * Position of tilt servo in mc mode
