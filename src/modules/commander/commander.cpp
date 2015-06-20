@@ -76,6 +76,7 @@
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/position_setpoint_triplet.h>
 #include <uORB/topics/vehicle_gps_position.h>
+#include <uORB/topics/vehicle_attitude.h> 
 #include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/subsystem_info.h>
 #include <uORB/topics/actuator_controls.h>
@@ -189,6 +190,7 @@ static float takeoff_alt = 5.0f;
 static int parachute_enabled = 0;
 static float eph_threshold = 5.0f;
 static float epv_threshold = 10.0f;
+static uint64_t last_vehicle_attitude_update = 0;
 
 static struct vehicle_status_s status;
 static struct actuator_armed_s armed;
@@ -1098,6 +1100,12 @@ int commander_thread_main(int argc, char *argv[])
 	struct vehicle_local_position_s local_position;
 	memset(&local_position, 0, sizeof(local_position));
 
+	/* Subscribe to vehicle attitude data */
+	int attitude_sub = orb_subscribe(ORB_ID(vehicle_attitude));
+	struct vehicle_attitude_s attitude;
+	memset(&attitude, 0, sizeof(attitude));
+	last_vehicle_attitude_update = 0;
+
 	/* Subscribe to land detector */
 	int land_detector_sub = orb_subscribe(ORB_ID(vehicle_land_detected));
 	struct vehicle_land_detected_s land_detector;
@@ -2000,6 +2008,9 @@ int commander_thread_main(int argc, char *argv[])
 			}
 		}
 
+		/* Get current timestamp */
+		const hrt_abstime now = hrt_absolute_time();
+
 		/* Check for failure combinations which lead to flight termination */
 		if (armed.armed) {
 			/* At this point the data link and the gps system have been checked
@@ -2050,10 +2061,48 @@ int commander_thread_main(int argc, char *argv[])
 					mavlink_log_critical(mavlink_fd, "RC and GPS lost: flight termination");
 				}
 			}
-		}
 
-		/* Get current timestamp */
-		const hrt_abstime now = hrt_absolute_time();
+			/* Check the attitude health of the vehicle including exceeding maximum attitudes or the failure
+			 * to receive any updates at all. */
+			orb_check(attitude_sub, &updated);
+			if (!updated) {
+				/* Let's make sure the attitude controller hasn't died */
+				if (now - last_vehicle_attitude_update > 4 * 1000000) {  // secs
+					armed.force_failsafe = true;
+					status_changed = true;
+					static bool flight_termination_printed = false;
+
+					if (!flight_termination_printed) {
+						warnx("Flight termination because of attitude status loss");
+						flight_termination_printed = true;
+					}
+
+					if (counter % (1000000 / COMMANDER_MONITORING_INTERVAL) == 0) {
+						mavlink_log_critical(mavlink_fd, "Attitude data lost: flight termination");
+					}
+				}
+			} else {
+				last_vehicle_attitude_update = now;
+				orb_copy(ORB_ID(vehicle_attitude), attitude_sub, &attitude);
+				/* See if the vehicle is inverted in which case no mercy will be shown */
+				if ((attitude.roll > (float) M_PI_2 || attitude.roll < (float) -M_PI_2) ||
+						(attitude.pitch > (float) M_PI_2 || attitude.pitch < (float) -M_PI_2)) {
+					armed.force_failsafe = true;
+					status_changed = true;
+					static bool flight_termination_printed = false;
+
+					if (!flight_termination_printed) {
+						warnx("Flight termination because of bad attitude. Roll %1.2f Pitch %1.2f",
+							(double) attitude.roll, (double) attitude.pitch);
+						flight_termination_printed = true;
+					}
+
+					if (counter % (1000000 / COMMANDER_MONITORING_INTERVAL) == 0) {
+						mavlink_log_critical(mavlink_fd, "Bad attitude: flight termination");
+					}
+				}
+			}
+		}
 
 		/* First time home position update - but only if disarmed */
 		if (!status.condition_home_position_valid && !armed.armed) {
@@ -2183,6 +2232,7 @@ int commander_thread_main(int argc, char *argv[])
 	close(offboard_control_mode_sub);
 	close(local_position_sub);
 	close(global_position_sub);
+	close(attitude_sub);
 	close(gps_sub);
 	close(sensor_sub);
 	close(safety_sub);
