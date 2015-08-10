@@ -166,6 +166,8 @@ void Tiltrotor::update_vtol_state()
 				}
 				break;
 			case TRANSITION_BACK:
+				// failsafe into fixed wing mode
+				_vtol_schedule.flight_mode = FW_MODE;
 				break;
 		}
 	}
@@ -202,7 +204,6 @@ void Tiltrotor::update_mc_state()
 		flag_idle_mc = true;
 	}
 
-	// set the mc attitude control weights to one
 	_mc_roll_weight = 1.0f;
 	_mc_pitch_weight = 1.0f;
 	_mc_yaw_weight = 1.0f;
@@ -224,7 +225,6 @@ void Tiltrotor::update_mc_state()
 		flag_idle_mc = false;
 	}
 
-	// set the mc attitude control weights to zero
 	_mc_roll_weight = 0.0f;
 	_mc_pitch_weight = 0.0f;
 	_mc_yaw_weight = 0.0f;
