@@ -312,7 +312,7 @@ void Tiltrotor::set_rear_motor_state(rear_motor_state state) {
 			pwm_value = PWM_DEFAULT_MAX;
 			_rear_motors = ENABLED;
 		case DISABLED:
-			pwm_value = PWM_LOWEST_MIN;
+			pwm_value = PWM_LOWEST_MAX;
 			_rear_motors = DISABLED;
 		case IDLE:
 			pwm_value = _params->idle_pwm_mc;
