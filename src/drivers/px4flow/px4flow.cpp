@@ -237,7 +237,7 @@ PX4FLOW::init()
 
 	_class_instance = register_class_devname(RANGE_FINDER_BASE_DEVICE_PATH);
 
-	if (_class_instance == CLASS_DEVICE_PRIMARY) {
+	if (_class_instance == CLASS_DEVICE_SECONDARY) {
 		/* get a publish handle on the range finder topic */
 		struct distance_sensor_s ds_report = {};
 

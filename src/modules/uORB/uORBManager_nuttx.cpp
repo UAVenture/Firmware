@@ -95,6 +95,10 @@ orb_advert_t uORB::Manager::orb_advertise_multi(const struct orb_metadata *meta,
 	/* open the node as an advertiser */
 	fd = node_open(PUBSUB, meta, data, true, instance, priority);
 
+	if (instance != nullptr) {
+		warnx("\nmulti pub %s %d", meta->o_name, *instance);
+	}
+
 	if (fd == ERROR) {
 		return nullptr;
 	}
@@ -125,6 +129,7 @@ int uORB::Manager::orb_subscribe(const struct orb_metadata *meta)
 int uORB::Manager::orb_subscribe_multi(const struct orb_metadata *meta, unsigned instance)
 {
 	int inst = instance;
+	warnx("\nmulti sub %s %d", meta->o_name, instance);
 	return node_open(PUBSUB, meta, nullptr, false, &inst);
 }
 
