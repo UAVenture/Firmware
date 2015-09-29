@@ -112,6 +112,19 @@ PARAM_DEFINE_INT32(LNDMC_USETER, 0);
 PARAM_DEFINE_FLOAT(LNDMC_CLEAR, -1.0f);
 
 /**
+ * Multicopter landing switch
+ *
+ * Enable landing switches if present as an additional signal by setting to 1.
+ * To trigger landing state based on the switch state immediately set to 2.
+ *
+ * @min 0
+ * @max 2
+ *
+ * @group Land Detector
+ */
+PARAM_DEFINE_FLOAT(LNDMC_SWITCH_ENABLE, 0f);
+
+/**
  * Fixedwing max horizontal velocity
  *
  * Maximum horizontal velocity allowed in the landed state (m/s)

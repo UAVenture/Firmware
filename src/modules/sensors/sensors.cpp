@@ -93,6 +93,7 @@
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/battery_status.h>
 #include <uORB/topics/differential_pressure.h>
+#include <uORB/topics/adc.h>
 #include <uORB/topics/airspeed.h>
 #include <uORB/topics/rc_parameter_map.h>
 
@@ -219,6 +220,7 @@ private:
 
 	int 		_rc_sub;			/**< raw rc channels data subscription */
 	int		_diff_pres_sub;			/**< raw differential pressure subscription */
+	int		_adc_sub;			/**< ADC subscription */
 	int		_vcontrol_mode_sub;		/**< vehicle control mode subscription */
 	int 		_params_sub;			/**< notification of parameter updates */
 	int		_rc_parameter_map_sub;		/**< rc parameter map subscription */
@@ -231,13 +233,15 @@ private:
 	orb_advert_t	_battery_pub;			/**< battery status */
 	orb_advert_t	_airspeed_pub;			/**< airspeed */
 	orb_advert_t	_diff_pres_pub;			/**< differential_pressure */
-
+	orb_advert_t	_adc_pub;			/**< ADC */
+	
 	perf_counter_t	_loop_perf;			/**< loop performance counter */
 
 	struct rc_channels_s _rc;			/**< r/c channel data */
 	struct battery_status_s _battery_status;	/**< battery status */
 	struct baro_report _barometer;			/**< barometer data */
 	struct differential_pressure_s _diff_pres;
+	struct adc_s _adc;				/**< ADC raw values */
 	struct airspeed_s _airspeed;
 	struct rc_parameter_map_s _rc_parameter_map;
 	float _param_rc_values[rc_parameter_map_s::RC_PARAM_MAP_NCHAN];	/**< parameter values for RC control */
@@ -1680,6 +1684,16 @@ Sensors::adc_poll(struct sensor_combined_s &raw)
 					/* calculate airspeed, raw is the difference from */
 					float voltage = (float)(buf_adc[i].am_data) * 3.3f / 4096.0f * 2.0f;  // V_ref/4096 * (voltage divider factor)
 
+					/* Announce the ADC state if needed, otherwise just publish */
+					_adc.timestamp = t;
+					_adc.virtual_pin_15 = voltage;
+
+					if (_adc_pub != nullptr) {
+						orb_publish(ORB_ID(adc), _adc_pub, &_adc);
+					} else {
+						_adc_pub = orb_advertise(ORB_ID(adc), &_adc);
+					}
+
 					/**
 					 * The voltage divider pulls the signal down, only act on
 					 * a valid voltage from a connected sensor. Also assume a non-
@@ -2102,6 +2116,7 @@ Sensors::task_main()
 
 	_rc_sub = orb_subscribe(ORB_ID(input_rc));
 	_diff_pres_sub = orb_subscribe(ORB_ID(differential_pressure));
+	_adc_sub = orb_subscribe(ORB_ID(adc));
 	_vcontrol_mode_sub = orb_subscribe(ORB_ID(vehicle_control_mode));
 	_params_sub = orb_subscribe(ORB_ID(parameter_update));
 	_rc_parameter_map_sub = orb_subscribe(ORB_ID(rc_parameter_map));
