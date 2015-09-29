@@ -54,17 +54,21 @@ MulticopterLandDetector::MulticopterLandDetector() : LandDetector(),
 	_armingSub(-1),
 	_parameterSub(-1),
 	_attitudeSub(-1),
+	_adcSub(-1),
 	_vehicleGlobalPosition{},
 	_vehicleStatus{},
 	_actuators{},
 	_arming{},
 	_vehicleAttitude{},
-	_landTimer(0)
+	_adc{},
+	_landTimer(0),
+	_landedSwitchHealty(true)
 {
 	_paramHandle.maxRotation = param_find("LNDMC_ROT_MAX");
 	_paramHandle.maxVelocity = param_find("LNDMC_XY_VEL_MAX");
 	_paramHandle.maxClimbRate = param_find("LNDMC_Z_VEL_MAX");
 	_paramHandle.maxThrottle = param_find("LNDMC_THR_MAX");
+	_paramHandle.landingSwitchEnable = param_find("LNDMC_SWITCH_ENABLE");
 }
 
 void MulticopterLandDetector::initialize()
@@ -76,6 +80,7 @@ void MulticopterLandDetector::initialize()
 	_actuatorsSub = orb_subscribe(ORB_ID_VEHICLE_ATTITUDE_CONTROLS);
 	_armingSub = orb_subscribe(ORB_ID(actuator_armed));
 	_parameterSub = orb_subscribe(ORB_ID(parameter_update));
+	_adcSub = orb_subscribe(ORB_ID(adc));
 
 	// download parameters
 	updateParameterCache(true);
@@ -88,6 +93,7 @@ void MulticopterLandDetector::updateSubscriptions()
 	orb_update(ORB_ID(vehicle_status), _vehicleStatusSub, &_vehicleStatus);
 	orb_update(ORB_ID_VEHICLE_ATTITUDE_CONTROLS, _actuatorsSub, &_actuators);
 	orb_update(ORB_ID(actuator_armed), _armingSub, &_arming);
+	orb_update(ORB_ID(adc), _adcSub, &_adc);
 }
 
 bool MulticopterLandDetector::update()
@@ -121,6 +127,14 @@ bool MulticopterLandDetector::update()
 		armThresholdFactor = 2.5f;
 	}
 
+	// Check if landing gear switch support is enabled and if they are on.
+	bool landedSwitchOn = (_landedSwitchHealthy && _paramHandle.landingSwitchEnable > 0f && _adc.virtual_pin_15 > 4.5f);
+
+	// If set via parameter, signal landing detection state using only the switch immediately.
+	if (_paramHandle.landingSwitchEnable == 2f) {
+		return landedSwitchOn;
+	}
+
 	// check if we are moving vertically - this might see a spike after arming due to
 	// throttle-up vibration. If accelerating fast the throttle thresholds will still give
 	// an accurate in-air indication
@@ -141,7 +155,17 @@ bool MulticopterLandDetector::update()
 	// check if thrust output is minimal (about half of default)
 	bool minimalThrust = _actuators.control[3] <= _params.maxThrottle;
 
-	if (verticalMovement || rotating || !minimalThrust || horizontalMovement) {
+	// Let's do some paranoid checking until we really trust switch triggered landing detection and check if the switches
+	// indicate we are landed but everything else says we are in air.
+	if (_landedSwitchHealthy && landedSwitchOn && (verticalMovement || rotating || !minimalThrust || horizontalMovement)) {
+		// Everything else says we are not landed, let's assume the switch is not healthy.
+		_landedSwitchHealthy = false;
+		landedSwitchOff = false;
+		warnx("The landing switch system appears to have failed. Ignoring.");
+	}
+
+
+	if (verticalMovement || rotating || !minimalThrust || horizontalMovement || !landedSwitchOn) {
 		// sensed movement, so reset the land detector
 		_landTimer = now;
 		return false;
@@ -167,5 +191,6 @@ void MulticopterLandDetector::updateParameterCache(const bool force)
 		param_get(_paramHandle.maxRotation, &_params.maxRotation);
 		_params.maxRotation = math::radians(_params.maxRotation);
 		param_get(_paramHandle.maxThrottle, &_params.maxThrottle);
+		param_get(_paramHandle.landingSwitchEnable, &_params.landingSwitchEnable);
 	}
 }

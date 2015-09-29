@@ -49,6 +49,7 @@
 #include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/actuator_armed.h>
 #include <uORB/topics/parameter_update.h>
+#include <uORB/topics/adc.h>
 #include <systemlib/param/param.h>
 
 class MulticopterLandDetector : public LandDetector
@@ -87,6 +88,7 @@ private:
 		param_t maxVelocity;
 		param_t maxRotation;
 		param_t maxThrottle;
+		param_t landingSwitchEnable;
 	}		_paramHandle;
 
 	struct {
@@ -94,6 +96,7 @@ private:
 		float maxVelocity;
 		float maxRotation;
 		float maxThrottle;
+		bool landingSwitchEnable;
 	} _params;
 
 private:
@@ -103,14 +106,17 @@ private:
 	int _armingSub;
 	int _parameterSub;
 	int _attitudeSub;
+	int _adcSub;
 
 	struct vehicle_global_position_s	_vehicleGlobalPosition;		/**< the result from global position subscription */
 	struct vehicle_status_s 		_vehicleStatus;
 	struct actuator_controls_s		_actuators;
 	struct actuator_armed_s			_arming;
 	struct vehicle_attitude_s		_vehicleAttitude;
+	struct adc_s 				_adc;
 
 	uint64_t _landTimer;							/**< timestamp in microseconds since a possible land was detected*/
+	bool _landedSwitchHealthy;
 };
 
 #endif //__MULTICOPTER_LAND_DETECTOR_H__
