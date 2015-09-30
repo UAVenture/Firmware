@@ -96,8 +96,14 @@ private:
 		float maxVelocity;
 		float maxRotation;
 		float maxThrottle;
-		bool landingSwitchEnable;
+		int32_t landingSwitchEnable;
 	} _params;
+
+	enum {
+		SWITCH_OFF = 0,		// Disable the switch, it will be ignored.
+		SWITCH_ON = 1,		// Use switch in combination with other signals.
+		SWITCH_TRUST = 2	// Fully trust the switch, disregard other signals.
+	};
 
 private:
 	int _vehicleGlobalPositionSub;						/**< notification of global position */
@@ -116,7 +122,6 @@ private:
 	struct adc_s 				_adc;
 
 	uint64_t _landTimer;							/**< timestamp in microseconds since a possible land was detected*/
-	bool _landedSwitchHealthy;
 };
 
 #endif //__MULTICOPTER_LAND_DETECTOR_H__

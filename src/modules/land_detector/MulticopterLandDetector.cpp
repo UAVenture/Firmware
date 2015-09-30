@@ -61,8 +61,7 @@ MulticopterLandDetector::MulticopterLandDetector() : LandDetector(),
 	_arming{},
 	_vehicleAttitude{},
 	_adc{},
-	_landTimer(0),
-	_landedSwitchHealty(true)
+	_landTimer(0)
 {
 	_paramHandle.maxRotation = param_find("LNDMC_ROT_MAX");
 	_paramHandle.maxVelocity = param_find("LNDMC_XY_VEL_MAX");
@@ -127,14 +126,6 @@ bool MulticopterLandDetector::update()
 		armThresholdFactor = 2.5f;
 	}
 
-	// Check if landing gear switch support is enabled and if they are on.
-	bool landedSwitchOn = (_landedSwitchHealthy && _paramHandle.landingSwitchEnable > 0f && _adc.virtual_pin_15 > 4.5f);
-
-	// If set via parameter, signal landing detection state using only the switch immediately.
-	if (_paramHandle.landingSwitchEnable == 2f) {
-		return landedSwitchOn;
-	}
-
 	// check if we are moving vertically - this might see a spike after arming due to
 	// throttle-up vibration. If accelerating fast the throttle thresholds will still give
 	// an accurate in-air indication
@@ -155,17 +146,22 @@ bool MulticopterLandDetector::update()
 	// check if thrust output is minimal (about half of default)
 	bool minimalThrust = _actuators.control[3] <= _params.maxThrottle;
 
-	// Let's do some paranoid checking until we really trust switch triggered landing detection and check if the switches
-	// indicate we are landed but everything else says we are in air.
-	if (_landedSwitchHealthy && landedSwitchOn && (verticalMovement || rotating || !minimalThrust || horizontalMovement)) {
-		// Everything else says we are not landed, let's assume the switch is not healthy.
-		_landedSwitchHealthy = false;
-		landedSwitchOff = false;
-		warnx("The landing switch system appears to have failed. Ignoring.");
+	// Check if landing gear switch support is enabled, if the switch(es) seem to be working and if they are active/on.
+	bool landedSwitchOff = (_params.landingSwitchEnable != SWITCH_OFF && _adc.virtual_pin_15 < 4.5f);
+
+	// If set via parameter, signal landing detection state using only the switch after a shorter wait time. We
+	// can't trigger immediately as there might be some bouncing on landing.
+	if (_params.landingSwitchEnable == SWITCH_TRUST) {
+		// Remain in a non-landed state if the switch is off or if something has gone wrong with the switches.
+		if (landedSwitchOff) {
+			_landTimer = now;
+			return false;
+		}
+
+		return now - _landTimer > LAND_DETECTOR_TRIGGER_TIME_FAST;
 	}
 
-
-	if (verticalMovement || rotating || !minimalThrust || horizontalMovement || !landedSwitchOn) {
+	if (verticalMovement || rotating || !minimalThrust || horizontalMovement || landedSwitchOff) {
 		// sensed movement, so reset the land detector
 		_landTimer = now;
 		return false;
