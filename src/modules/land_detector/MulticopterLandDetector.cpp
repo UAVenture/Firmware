@@ -63,8 +63,7 @@ MulticopterLandDetector::MulticopterLandDetector() : LandDetector(),
 	_landTimer(0),
 	_bottomClearance(-1.0f)
 	_adc{},
-	_landTimer(0),
-	_landedSwitchHealty(true)
+	_landTimer(0)
 {
 	_paramHandle.maxRotation = param_find("LNDMC_ROT_MAX");
 	_paramHandle.maxVelocity = param_find("LNDMC_XY_VEL_MAX");
@@ -151,14 +150,6 @@ bool MulticopterLandDetector::get_landed_state()
 	// close to the ground, landing imminent (most likely)
 	bool nearGround = _vehicleGlobalPosition.terrain_alt_valid && _params.useTerrain == 1 &&
 			_vehicleGlobalPosition.alt - _vehicleGlobalPosition.terrain_alt < _bottomClearance;
-
-	// Check if landing gear switch support is enabled and if they are on.
-	bool landedSwitchOn = (_landedSwitchHealthy && _paramHandle.landingSwitchEnable > 0f && _adc.virtual_pin_15 > 4.5f);
-
-	// If set via parameter, signal landing detection state using only the switch immediately.
-	if (_paramHandle.landingSwitchEnable == 2f) {
-		return landedSwitchOn;
-	}
 
 	// check if we are moving vertically - this might see a spike after arming due to
 	// throttle-up vibration. If accelerating fast the throttle thresholds will still give

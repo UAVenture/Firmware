@@ -524,6 +524,7 @@ Sensors::Sensors() :
 	_battery_pub(nullptr),
 	_airspeed_pub(nullptr),
 	_diff_pres_pub(nullptr),
+	_adc_pub(nullptr),
 
 	/* performance counters */
 	_loop_perf(perf_alloc(PC_ELAPSED, "sensor task update")),
@@ -1680,7 +1681,6 @@ Sensors::adc_poll(struct sensor_combined_s &raw)
 					_battery_current_timestamp = t;
 
 				} else if (ADC_AIRSPEED_VOLTAGE_CHANNEL == buf_adc[i].am_channel) {
-
 					/* calculate airspeed, raw is the difference from */
 					float voltage = (float)(buf_adc[i].am_data) * 3.3f / 4096.0f * 2.0f;  // V_ref/4096 * (voltage divider factor)
 

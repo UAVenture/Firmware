@@ -122,7 +122,7 @@ PARAM_DEFINE_FLOAT(LNDMC_CLEAR, -1.0f);
  *
  * @group Land Detector
  */
-PARAM_DEFINE_FLOAT(LNDMC_SWITCH_ENABLE, 0f);
+PARAM_DEFINE_INT32(LNDMC_SWITCH_ENABLE, 0);
 
 /**
  * Fixedwing max horizontal velocity
