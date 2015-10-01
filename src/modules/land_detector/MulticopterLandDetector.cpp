@@ -171,6 +171,9 @@ bool MulticopterLandDetector::get_landed_state()
 	// check if thrust output is minimal (about half of default)
 	bool minimalThrust = _actuators.control[3] <= _params.maxThrottle;
 
+	// Check if landing gear switch support is enabled, if the switch(es) seem to be working and if they are active/on.
+	bool landedSwitchOff = (_params.landingSwitchEnable != SWITCH_OFF && _adc.virtual_pin_15 < 4.5f);
+
 	if (verticalMovement || rotating || (!minimalThrust && !nearGround) || horizontalMovement) {
 		// sensed movement, so reset the land detector
 		_landTimer = now;
