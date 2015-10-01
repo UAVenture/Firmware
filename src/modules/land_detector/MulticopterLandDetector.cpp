@@ -152,8 +152,8 @@ bool MulticopterLandDetector::update()
 	// If set via parameter, signal landing detection state using only the switch after a shorter wait time. We
 	// can't trigger immediately as there might be some bouncing on landing.
 	if (_params.landingSwitchEnable == SWITCH_TRUST) {
-		// Remain in a non-landed state if the switch is off or if something has gone wrong with the switches.
-		if (landedSwitchOff) {
+		// Remain in a non-landed state if the switch is off or we have any lateral movement.
+		if (landedSwitchOff || rotating || horizontalMovement) {
 			_landTimer = now;
 			return false;
 		}
