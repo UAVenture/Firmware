@@ -93,6 +93,7 @@ bool FixedwingLandDetector::update()
 {
 	// First poll for new data from our subscriptions
 	updateSubscriptions();
+	updateParameterCache(false);
 
 	// only trigger flight conditions if we are armed
 	if (!_arming.armed) {

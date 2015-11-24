@@ -59,12 +59,15 @@ MulticopterLandDetector::MulticopterLandDetector() : LandDetector(),
 	_actuators{},
 	_arming{},
 	_vehicleAttitude{},
-	_landTimer(0)
+	_landTimer(0),
+	_bottomClearance(-1.0f)
 {
 	_paramHandle.maxRotation = param_find("LNDMC_ROT_MAX");
 	_paramHandle.maxVelocity = param_find("LNDMC_XY_VEL_MAX");
 	_paramHandle.maxClimbRate = param_find("LNDMC_Z_VEL_MAX");
 	_paramHandle.maxThrottle = param_find("LNDMC_THR_MAX");
+	_paramHandle.useTerrain = param_find("LNDMC_USETER");
+	_paramHandle.bottomClearance = param_find("LNDMC_CLEAR");
 }
 
 void MulticopterLandDetector::initialize()
@@ -94,6 +97,15 @@ bool MulticopterLandDetector::update()
 {
 	// first poll for new data from our subscriptions
 	updateSubscriptions();
+	updateParameterCache(false);
+
+	// update _bottomClearance while not armed
+	if (_params.bottomClearance < 0 && _vehicleGlobalPosition.terrain_alt_valid && !_arming.armed) {
+		_bottomClearance = _vehicleGlobalPosition.alt - _vehicleGlobalPosition.terrain_alt + 0.1f;
+
+	} else if (_params.bottomClearance >= 0) {
+		_bottomClearance = _params.bottomClearance;
+	}
 
 	updateParameterCache(false);
 
@@ -129,6 +141,10 @@ bool MulticopterLandDetector::get_landed_state()
 		armThresholdFactor = 2.5f;
 	}
 
+	// close to the ground, landing imminent (most likely)
+	bool nearGround = _vehicleGlobalPosition.terrain_alt_valid && _params.useTerrain == 1 &&
+			_vehicleGlobalPosition.alt - _vehicleGlobalPosition.terrain_alt < _bottomClearance;
+
 	// check if we are moving vertically - this might see a spike after arming due to
 	// throttle-up vibration. If accelerating fast the throttle thresholds will still give
 	// an accurate in-air indication
@@ -149,7 +165,7 @@ bool MulticopterLandDetector::get_landed_state()
 	// check if thrust output is minimal (about half of default)
 	bool minimalThrust = _actuators.control[3] <= _params.maxThrottle;
 
-	if (verticalMovement || rotating || !minimalThrust || horizontalMovement) {
+	if (verticalMovement || rotating || (!minimalThrust && !nearGround) || horizontalMovement) {
 		// sensed movement, so reset the land detector
 		_landTimer = now;
 		return false;
@@ -175,5 +191,7 @@ void MulticopterLandDetector::updateParameterCache(const bool force)
 		param_get(_paramHandle.maxRotation, &_params.maxRotation);
 		_params.maxRotation = math::radians(_params.maxRotation);
 		param_get(_paramHandle.maxThrottle, &_params.maxThrottle);
+		param_get(_paramHandle.useTerrain, &_params.useTerrain);
+		param_get(_paramHandle.bottomClearance, &_params.bottomClearance);
 	}
 }

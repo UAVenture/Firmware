@@ -92,6 +92,8 @@ private:
 		param_t maxVelocity;
 		param_t maxRotation;
 		param_t maxThrottle;
+		param_t useTerrain;
+		param_t bottomClearance;
 	}		_paramHandle;
 
 	struct {
@@ -99,6 +101,8 @@ private:
 		float maxVelocity;
 		float maxRotation;
 		float maxThrottle;
+		int useTerrain;
+		float bottomClearance;
 	} _params;
 
 private:
@@ -116,6 +120,7 @@ private:
 	struct vehicle_attitude_s		_vehicleAttitude;
 
 	uint64_t _landTimer;							/**< timestamp in microseconds since a possible land was detected*/
+	float _bottomClearance;
 };
 
 #endif //__MULTICOPTER_LAND_DETECTOR_H__

@@ -84,6 +84,34 @@ PARAM_DEFINE_FLOAT(LNDMC_ROT_MAX, 20.0f);
 PARAM_DEFINE_FLOAT(LNDMC_THR_MAX, 0.15f);
 
 /**
+ * Multicopter terrain estimate
+ *
+ * Use terrain estimate to check if the vehicle is near the ground and
+ * make landing detection trigger sooner and disregarding thrust.
+ * 
+ *
+ * @min 0
+ * @max 1
+ *
+ * @group Land Detector
+ */
+PARAM_DEFINE_INT32(LNDMC_USETER, 0);
+
+/**
+ * Multicopter bottom clearance
+ *
+ * Bottom clearance below which the multicopter is considered just before landing touchdown.
+ * If set < 0 this value will be measured at takeoff and 10cm added.
+ * Only active when LNDMC_USETER enabled.
+ *
+ * @min -1.0
+ * @max 1.0
+ *
+ * @group Land Detector
+ */
+PARAM_DEFINE_FLOAT(LNDMC_CLEAR, -1.0f);
+
+/**
  * Fixedwing max horizontal velocity
  *
  * Maximum horizontal velocity allowed in the landed state (m/s)
