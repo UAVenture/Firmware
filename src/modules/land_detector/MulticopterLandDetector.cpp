@@ -60,10 +60,9 @@ MulticopterLandDetector::MulticopterLandDetector() : LandDetector(),
 	_actuators{},
 	_arming{},
 	_vehicleAttitude{},
+	_adc{},
 	_landTimer(0),
 	_bottomClearance(-1.0f)
-	_adc{},
-	_landTimer(0)
 {
 	_paramHandle.maxRotation = param_find("LNDMC_ROT_MAX");
 	_paramHandle.maxVelocity = param_find("LNDMC_XY_VEL_MAX");
@@ -172,9 +171,10 @@ bool MulticopterLandDetector::get_landed_state()
 	bool minimalThrust = _actuators.control[3] <= _params.maxThrottle;
 
 	// Check if landing gear switch support is enabled, if the switch(es) seem to be working and if they are active/on.
-	bool landedSwitchOff = (_params.landingSwitchEnable != SWITCH_OFF && _adc.virtual_pin_15 < 4.5f);
+	bool landedSwitchOff = (_params.landingSwitchEnable != SWITCH_OFF && _adc.virtual_pin_15 < 0.6f);
+	//PX4_WARN("v15: %1.4f, switch off: %d, near ground: %d", (double)_adc.virtual_pin_15, landedSwitchOff, nearGround);
 
-	if (verticalMovement || rotating || (!minimalThrust && !nearGround) || horizontalMovement) {
+	if (verticalMovement || rotating || (!minimalThrust && (!nearGround || landedSwitchOff)) || horizontalMovement) {
 		// sensed movement, so reset the land detector
 		_landTimer = now;
 		return false;
