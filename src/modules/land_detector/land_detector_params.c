@@ -88,7 +88,7 @@ PARAM_DEFINE_FLOAT(LNDMC_THR_MAX, 0.15f);
  *
  * Use terrain estimate to check if the vehicle is near the ground and
  * make landing detection trigger sooner and disregarding thrust.
- * 
+ *
  *
  * @min 0
  * @max 1
