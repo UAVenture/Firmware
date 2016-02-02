@@ -42,6 +42,7 @@
  * @author Lorenz Meier 	<lm@inf.ethz.ch>
  * @author Thomas Gubler	<thomasgubler@gmail.com>
  * @author David Vorsin     <davidvorsin@gmail.com>
+ * @author Sander Smeets    <sander@droneslab.com>
  *
  */
 #ifndef VTOL_ATT_CONTROL_MAIN_H
@@ -106,6 +107,7 @@ public:
 
 	int start();	/* start the task and return OK on success */
 	bool is_fixed_wing_requested();
+	void abort_transition();
 
 	struct vehicle_attitude_s 				*get_att() {return &_v_att;}
 	struct vehicle_attitude_setpoint_s		*get_att_sp() {return &_v_att_sp;}
@@ -201,6 +203,7 @@ private:
 	 * for fixed wings we want to have an idle speed of zero since we do not want
 	 * to waste energy when gliding. */
 	int _transition_command;
+	bool _abort_transition;
 
 	VtolType *_vtol_type;	// base class for different vtol types
 	Tiltrotor *_tiltrotor;	// tailsitter vtol type

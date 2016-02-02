@@ -41,6 +41,7 @@
  * @author Ban Siesta <bansiesta@gmail.com>
  * @author Simon Wilks <simon@uaventure.com>
  * @author Andreas Antener <andreas@uaventure.com>
+ * @author Sander Smeets <sander@droneslab.com>
  */
 
 #include <sys/types.h>
@@ -237,6 +238,10 @@ Mission::update_offboard_mission()
 
 	if (orb_copy(ORB_ID(offboard_mission), _navigator->get_offboard_mission_sub(), &_offboard_mission) == OK) {
 		warnx("offboard mission updated: dataman_id=%d, count=%d, current_seq=%d", _offboard_mission.dataman_id, _offboard_mission.count, _offboard_mission.current_seq);
+
+		/* inform the user on succesful storing of mission */
+		mavlink_log_info(_navigator->get_mavlink_fd(), "Mission succesfully stored: %d items", _offboard_mission.count);
+
 		/* determine current index */
 		if (_offboard_mission.current_seq >= 0 && _offboard_mission.current_seq < (int)_offboard_mission.count) {
 			_current_offboard_mission_index = _offboard_mission.current_seq;
@@ -432,7 +437,7 @@ Mission::set_mission_items()
 
 			float takeoff_alt = calculate_takeoff_altitude(&_mission_item);
 
-			mavlink_log_critical(_navigator->get_mavlink_fd(), "takeoff to %.1f meters above home", (double)(takeoff_alt - _navigator->get_home_position()->alt));
+			mavlink_log_info(_navigator->get_mavlink_fd(), "takeoff to %.1f meters above home", (double)(takeoff_alt - _navigator->get_home_position()->alt));
 
 			_mission_item.nav_cmd = NAV_CMD_TAKEOFF;
 			_mission_item.lat = _navigator->get_global_position()->lat;
@@ -811,6 +816,11 @@ Mission::read_mission_item(bool onboard, int offset, struct mission_item_s *miss
 		return false;
 	}
 
+	if(offset==0){
+		/* inform user of waypoint to be executed */
+		mavlink_log_info(_navigator->get_mavlink_fd(), "Executing mission item %i", (int)(current_index+1));
+	}
+
 	if (onboard) {
 		/* onboard mission */
 		mission_index_ptr = (offset == 0) ? &_current_onboard_mission_index : &index_to_read;
@@ -875,7 +885,7 @@ Mission::read_mission_item(bool onboard, int offset, struct mission_item_s *miss
 
 			} else {
 				if (offset == 0) {
-					mavlink_log_critical(_navigator->get_mavlink_fd(),
+					mavlink_log_info(_navigator->get_mavlink_fd(),
 							     "DO JUMP repetitions completed");
 				}
 				/* no more DO_JUMPS, therefore just try to continue with next mission item */

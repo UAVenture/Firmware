@@ -42,6 +42,7 @@
  * @author Lorenz Meier 	<lm@inf.ethz.ch>
  * @author Thomas Gubler	<thomasgubler@gmail.com>
  * @author David Vorsin     <davidvorsin@gmail.com>
+ * @author Sander Smeets    <sander@droneslab.com>
  *
  */
 #include "vtol_att_control_main.h"
@@ -427,8 +428,27 @@ VtolAttitudeControl::is_fixed_wing_requested()
 		to_fw = _transition_command == vehicle_status_s::VEHICLE_VTOL_STATE_FW;
 	}
 
+	if(_abort_transition) {
+		to_fw = false;
+	}
+
 	return to_fw;
 }
+
+/*
+ * Abort transition
+ */
+void
+VtolAttitudeControl::abort_transition()
+{
+	if(!_abort_transition) {
+		// TODO: add mavlink log message
+		_abort_transition = true;
+	}
+
+}
+
+
 
 /**
 * Update parameters.
