@@ -41,6 +41,7 @@
  * @author Ban Siesta <bansiesta@gmail.com>
  * @author Simon Wilks <simon@uaventure.com>
  * @author Andreas Antener <andreas@uaventure.com>
+ * @author Sander Smeets <sander@droneslab.com>
  */
 
 #include <sys/types.h>

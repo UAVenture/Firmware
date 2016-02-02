@@ -212,3 +212,14 @@ PARAM_DEFINE_FLOAT(VT_ARSP_TRANS, 10.0f);
  * @group VTOL Attitude Control
  */
 PARAM_DEFINE_INT32(VT_OPT_RECOV_EN, 0);
+
+/**
+ * Timeout front transition
+ *
+ * Time in seconds after which transition will be cancelled
+ *
+ * @min 0.0
+ * @max 20
+ * @group VTOL Attitude Control
+ */
+PARAM_DEFINE_FLOAT(VT_TRANS_TIMEOUT, 10.0f);
