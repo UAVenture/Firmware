@@ -73,7 +73,7 @@ SimpleMixer::~SimpleMixer()
 }
 
 int
-SimpleMixer::parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler_s &scaler)
+SimpleMixer::parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler_s *scaler)
 {
 	int ret;
 	int s[5];
@@ -99,17 +99,24 @@ SimpleMixer::parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler
 		return -1;
 	}
 
-	scaler.negative_scale	= s[0] / 10000.0f;
-	scaler.positive_scale	= s[1] / 10000.0f;
-	scaler.offset		= s[2] / 10000.0f;
-	scaler.min_output	= s[3] / 10000.0f;
-	scaler.max_output	= s[4] / 10000.0f;
+	//if (s[0] == 10000 && s[1] == 10000 &&
+	//		s[2] == 0 && 
+	//		s[3] == -10000 && s[4] == 10000) {
+	//	scaler = nullptr;	
+	//} else {
+		scaler = (mixer_scaler_s *) malloc(sizeof(struct mixer_scaler_s));
 
+		scaler->negative_scale	= s[0] / 10000.0f;
+		scaler->positive_scale	= s[1] / 10000.0f;
+		scaler->offset		= s[2] / 10000.0f;
+		scaler->min_output	= s[3] / 10000.0f;
+		scaler->max_output	= s[4] / 10000.0f;
+	//}
 	return 0;
 }
 
 int
-SimpleMixer::parse_control_scaler(const char *buf, unsigned &buflen, mixer_scaler_s &scaler, uint8_t &control_group,
+SimpleMixer::parse_control_scaler(const char *buf, unsigned &buflen, mixer_scaler_s *scaler, uint8_t &control_group,
 				  uint8_t &control_index)
 {
 	unsigned u[2];
@@ -137,11 +144,13 @@ SimpleMixer::parse_control_scaler(const char *buf, unsigned &buflen, mixer_scale
 
 	control_group		= u[0];
 	control_index		= u[1];
-	scaler.negative_scale	= s[0] / 10000.0f;
-	scaler.positive_scale	= s[1] / 10000.0f;
-	scaler.offset		= s[2] / 10000.0f;
-	scaler.min_output	= s[3] / 10000.0f;
-	scaler.max_output	= s[4] / 10000.0f;
+
+	scaler = (mixer_scaler_s *) malloc(sizeof(struct mixer_scaler_s));
+	scaler->negative_scale	= s[0] / 10000.0f;
+	scaler->positive_scale	= s[1] / 10000.0f;
+	scaler->offset		= s[2] / 10000.0f;
+	scaler->min_output	= s[3] / 10000.0f;
+	scaler->max_output	= s[4] / 10000.0f;
 
 	return 0;
 }
@@ -243,17 +252,19 @@ SimpleMixer::pwm_input(Mixer::ControlCallback control_cb, uintptr_t cb_handle, u
 	 * The output side is used to apply the scaling for the min/max values so that
 	 * the resulting output is a -1.0 ... 1.0 value for the min...max range.
 	 */
-	mixinfo->controls[0].scaler.negative_scale = 1.0f;
-	mixinfo->controls[0].scaler.positive_scale = 1.0f;
-	mixinfo->controls[0].scaler.offset = -mid;
-	mixinfo->controls[0].scaler.min_output = -(mid - min);
-	mixinfo->controls[0].scaler.max_output = (max - mid);
+	mixinfo->controls[0].scaler = (mixer_scaler_s *) malloc(sizeof(struct mixer_scaler_s));
+	mixinfo->controls[0].scaler->negative_scale = 1.0f;
+	mixinfo->controls[0].scaler->positive_scale = 1.0f;
+	mixinfo->controls[0].scaler->offset = -mid;
+	mixinfo->controls[0].scaler->min_output = -(mid - min);
+	mixinfo->controls[0].scaler->max_output = (max - mid);
 
-	mixinfo->output_scaler.negative_scale = 500.0f / (mid - min);
-	mixinfo->output_scaler.positive_scale = 500.0f / (max - mid);
-	mixinfo->output_scaler.offset = 0.0f;
-	mixinfo->output_scaler.min_output = -1.0f;
-	mixinfo->output_scaler.max_output = 1.0f;
+	mixinfo->output_scaler = (mixer_scaler_s *) malloc(sizeof(struct mixer_scaler_s));
+	mixinfo->output_scaler->negative_scale = 500.0f / (mid - min);
+	mixinfo->output_scaler->positive_scale = 500.0f / (max - mid);
+	mixinfo->output_scaler->offset = 0.0f;
+	mixinfo->output_scaler->min_output = -1.0f;
+	mixinfo->output_scaler->max_output = 1.0f;
 
 	sm = new SimpleMixer(control_cb, cb_handle, mixinfo);
 
@@ -295,10 +306,20 @@ SimpleMixer::mix(float *outputs, unsigned space, uint16_t *status_reg)
 			    _info->controls[i].control_index,
 			    input);
 
-		sum += scale(_info->controls[i].scaler, input);
+		//struct mixer_scaler_s scaler;
+		//if (_info->controls[i].scaler == nullptr) {
+		//	scaler.negative_scale	= 10000.0f;
+		//	scaler.positive_scale	= 10000.0f;
+		//	scaler.offset		= 0.0f;
+		//	scaler.min_output	= 10000.0f;
+		//	scaler.max_output	= 10000.0f;
+		//} else {
+			//scaler = *_info->controls[i].scaler;
+		//}
+		sum += scale(*_info->controls[i].scaler, input);
 	}
 
-	*outputs = scale(_info->output_scaler, sum);
+	*outputs = scale(*_info->output_scaler, sum);
 	return 1;
 }
 
@@ -323,7 +344,7 @@ SimpleMixer::check()
 	}
 
 	/* validate the output scaler */
-	ret = scale_check(_info->output_scaler);
+	ret = scale_check(*_info->output_scaler);
 
 	if (ret != 0) {
 		return ret;
@@ -341,7 +362,7 @@ SimpleMixer::check()
 		}
 
 		/* validate the scaler */
-		ret = scale_check(_info->controls[i].scaler);
+		ret = scale_check(*_info->controls[i].scaler);
 
 		if (ret != 0) {
 			return (10 * i + ret);

@@ -429,10 +429,10 @@ protected:
 private:
 	mixer_simple_s			*_info;
 
-	static int			parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler_s &scaler);
+	static int			parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler_s *scaler);
 	static int			parse_control_scaler(const char *buf,
 			unsigned &buflen,
-			mixer_scaler_s &scaler,
+			mixer_scaler_s *scaler,
 			uint8_t &control_group,
 			uint8_t &control_index);
 
