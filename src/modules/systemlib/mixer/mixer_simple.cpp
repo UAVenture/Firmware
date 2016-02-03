@@ -57,12 +57,21 @@
 #define debug(fmt, args...)	do { } while(0)
 //#define debug(fmt, args...)	do { printf("[mixer] " fmt "\n", ##args); } while(0)
 
+#define SCALER_TABLE_SIZE	4
+static mixer_scaler_s		_scaler_table[SCALER_TABLE_SIZE];
+static uint8_t			_count;
+
 SimpleMixer::SimpleMixer(ControlCallback control_cb,
 			 uintptr_t cb_handle,
 			 mixer_simple_s *mixinfo) :
 	Mixer(control_cb, cb_handle),
 	_info(mixinfo)
 {
+	_count = 0;
+
+	for (int i = 0; i < SCALER_TABLE_SIZE; i++) {
+		_scaler_table[i] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+	}
 }
 
 SimpleMixer::~SimpleMixer()
@@ -73,7 +82,7 @@ SimpleMixer::~SimpleMixer()
 }
 
 int
-SimpleMixer::parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler_s &scaler)
+SimpleMixer::parse_output_scaler(const char *buf, unsigned &buflen, uint8_t &scaler_index)
 {
 	int ret;
 	int s[5];
@@ -99,17 +108,25 @@ SimpleMixer::parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler
 		return -1;
 	}
 
+	scaler_index = _count;
+
+	struct mixer_scaler_s scaler;
 	scaler.negative_scale	= s[0] / 10000.0f;
 	scaler.positive_scale	= s[1] / 10000.0f;
 	scaler.offset		= s[2] / 10000.0f;
 	scaler.min_output	= s[3] / 10000.0f;
 	scaler.max_output	= s[4] / 10000.0f;
 
+	if (!save_scaler_entry(scaler, scaler_index)) {
+		debug("scaler table overflow.");
+		return -1;
+	}
+
 	return 0;
 }
 
 int
-SimpleMixer::parse_control_scaler(const char *buf, unsigned &buflen, mixer_scaler_s &scaler, uint8_t &control_group,
+SimpleMixer::parse_control_scaler(const char *buf, unsigned &buflen, uint8_t &scaler_index, uint8_t &control_group,
 				  uint8_t &control_index)
 {
 	unsigned u[2];
@@ -137,13 +154,49 @@ SimpleMixer::parse_control_scaler(const char *buf, unsigned &buflen, mixer_scale
 
 	control_group		= u[0];
 	control_index		= u[1];
+
+	struct mixer_scaler_s scaler;
 	scaler.negative_scale	= s[0] / 10000.0f;
 	scaler.positive_scale	= s[1] / 10000.0f;
 	scaler.offset		= s[2] / 10000.0f;
 	scaler.min_output	= s[3] / 10000.0f;
 	scaler.max_output	= s[4] / 10000.0f;
 
+	if (!save_scaler_entry(scaler, scaler_index)) {
+		debug("scaler table overflow.");
+		return -1;
+	}
+
 	return 0;
+}
+
+bool
+SimpleMixer::save_scaler_entry(mixer_scaler_s &scaler, uint8_t &index) {
+	for (int i = 0; i < _count; i++) {
+		if (is_equal(_scaler_table[i].negative_scale, scaler.negative_scale) && 
+				is_equal(_scaler_table[i].positive_scale, scaler.positive_scale) &&
+				is_equal(_scaler_table[i].offset, scaler.offset) &&
+				is_equal(_scaler_table[i].min_output, scaler.min_output) &&
+				is_equal(_scaler_table[i].max_output, scaler.max_output)) {
+			index = i;
+			return true;
+		}
+	}
+	
+	// WARNING WARNING: CHECK WE DON'T EXCEED THE LIMITS OF THE ARRAY!
+	if (_count >= SCALER_TABLE_SIZE) {
+		return false;
+	}
+
+	index = _count;
+	_scaler_table[_count++] = scaler;
+
+	return true;
+}
+
+bool
+SimpleMixer::is_equal(float var, float value) {
+	return (var > value - 0.0001f && var < value + 0.0001f);
 }
 
 SimpleMixer *
@@ -177,14 +230,14 @@ SimpleMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handle, c
 
 	mixinfo->control_count = inputs;
 
-	if (parse_output_scaler(end - buflen, buflen, mixinfo->output_scaler)) {
+	if (parse_output_scaler(end - buflen, buflen, mixinfo->output_scaler_index)) {
 		debug("simple mixer parser failed parsing out scaler tag, ret: '%s'", buf);
 		goto out;
 	}
 
 	for (unsigned i = 0; i < inputs; i++) {
 		if (parse_control_scaler(end - buflen, buflen,
-					 mixinfo->controls[i].scaler,
+					 mixinfo->controls[i].scaler_index,
 					 mixinfo->controls[i].control_group,
 					 mixinfo->controls[i].control_index)) {
 			debug("simple mixer parser failed parsing ctrl scaler tag, ret: '%s'", buf);
@@ -192,6 +245,8 @@ SimpleMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handle, c
 		}
 
 	}
+
+	warnx("COUNT %d", _count);
 
 	sm = new SimpleMixer(control_cb, cb_handle, mixinfo);
 
@@ -242,7 +297,7 @@ SimpleMixer::pwm_input(Mixer::ControlCallback control_cb, uintptr_t cb_handle, u
 	 *
 	 * The output side is used to apply the scaling for the min/max values so that
 	 * the resulting output is a -1.0 ... 1.0 value for the min...max range.
-	 */
+	 
 	mixinfo->controls[0].scaler.negative_scale = 1.0f;
 	mixinfo->controls[0].scaler.positive_scale = 1.0f;
 	mixinfo->controls[0].scaler.offset = -mid;
@@ -254,7 +309,7 @@ SimpleMixer::pwm_input(Mixer::ControlCallback control_cb, uintptr_t cb_handle, u
 	mixinfo->output_scaler.offset = 0.0f;
 	mixinfo->output_scaler.min_output = -1.0f;
 	mixinfo->output_scaler.max_output = 1.0f;
-
+*/
 	sm = new SimpleMixer(control_cb, cb_handle, mixinfo);
 
 	if (sm != nullptr) {
@@ -295,10 +350,10 @@ SimpleMixer::mix(float *outputs, unsigned space, uint16_t *status_reg)
 			    _info->controls[i].control_index,
 			    input);
 
-		sum += scale(_info->controls[i].scaler, input);
+		sum += scale(_scaler_table[_info->controls[i].scaler_index], input);
 	}
 
-	*outputs = scale(_info->output_scaler, sum);
+	*outputs = scale(_scaler_table[_info->output_scaler_index], sum);
 	return 1;
 }
 
@@ -323,7 +378,9 @@ SimpleMixer::check()
 	}
 
 	/* validate the output scaler */
-	ret = scale_check(_info->output_scaler);
+	ret = scale_check(_scaler_table[_info->output_scaler_index]);
+
+	ret = (_scaler_table[_info->output_scaler_index].negative_scale >= 1.0f && _scaler_table[_info->output_scaler_index].negative_scale <= 1.01f ? 0 : 1);
 
 	if (ret != 0) {
 		return ret;
@@ -341,7 +398,7 @@ SimpleMixer::check()
 		}
 
 		/* validate the scaler */
-		ret = scale_check(_info->controls[i].scaler);
+		ret = scale_check(_scaler_table[_info->controls[i].scaler_index]);
 
 		if (ret != 0) {
 			return (10 * i + ret);

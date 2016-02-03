@@ -411,6 +411,9 @@ public:
 			uint16_t mid,
 			uint16_t max);
 
+	static bool 			save_scaler_entry(mixer_scaler_s &scaler, uint8_t &index);
+	static bool			is_equal(float var, float value);
+
 	virtual unsigned		mix(float *outputs, unsigned space, uint16_t *status_reg);
 	virtual void			groups_required(uint32_t &groups);
 
@@ -426,13 +429,14 @@ public:
 
 protected:
 
+
 private:
 	mixer_simple_s			*_info;
 
-	static int			parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler_s &scaler);
+	static int			parse_output_scaler(const char *buf, unsigned &buflen, uint8_t &scaler_index);
 	static int			parse_control_scaler(const char *buf,
 			unsigned &buflen,
-			mixer_scaler_s &scaler,
+			uint8_t &scaler_index,
 			uint8_t &control_group,
 			uint8_t &control_index);
 
