@@ -57,9 +57,9 @@
 #define debug(fmt, args...)	do { } while(0)
 //#define debug(fmt, args...)	do { printf("[mixer] " fmt "\n", ##args); } while(0)
 
-#define SCALER_TABLE_SIZE	4
+#define SCALER_TABLE_SIZE	10
 static mixer_scaler_s		_scaler_table[SCALER_TABLE_SIZE];
-static uint8_t			_count;
+static uint8_t			_count = 0;
 
 SimpleMixer::SimpleMixer(ControlCallback control_cb,
 			 uintptr_t cb_handle,
@@ -67,11 +67,6 @@ SimpleMixer::SimpleMixer(ControlCallback control_cb,
 	Mixer(control_cb, cb_handle),
 	_info(mixinfo)
 {
-	_count = 0;
-
-	for (int i = 0; i < SCALER_TABLE_SIZE; i++) {
-		_scaler_table[i] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-	}
 }
 
 SimpleMixer::~SimpleMixer()
@@ -246,7 +241,7 @@ SimpleMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handle, c
 
 	}
 
-	warnx("COUNT %d", _count);
+	//warnx("COUNT %d", _count);
 
 	sm = new SimpleMixer(control_cb, cb_handle, mixinfo);
 
