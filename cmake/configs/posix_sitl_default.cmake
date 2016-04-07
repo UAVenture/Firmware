@@ -26,6 +26,7 @@ set(config_module_list
 	systemcmds/reboot
 	systemcmds/topic_listener
 	systemcmds/perf
+	systemcmds/motor_ramp
 	modules/uORB
 	modules/param
 	modules/systemlib
