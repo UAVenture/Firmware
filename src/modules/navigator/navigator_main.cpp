@@ -163,7 +163,8 @@ Navigator::Navigator() :
 	_param_cruising_speed_hover(this, "MPC_XY_CRUISE", false),
 	_param_cruising_speed_plane(this, "FW_AIRSPD_TRIM", false),
 	_param_cruising_throttle_plane(this, "FW_THR_CRUISE", false),
-	_mission_cruising_speed(-1.0f),
+	_mission_cruising_speed_mc(-1.0f),
+	_mission_cruising_speed_fw(-1.0f),
 	_mission_throttle(-1.0f)
 {
 	/* Create a list of our possible navigation types */
@@ -418,76 +419,18 @@ Navigator::task_main()
 			vehicle_command_s cmd;
 			orb_copy(ORB_ID(vehicle_command), _vehicle_command_sub, &cmd);
 
-			if (cmd.command == vehicle_command_s::VEHICLE_CMD_DO_REPOSITION) {
+			if (cmd.command == NAV_CMD_TAKEOFF) {
+				warnx("navigator: got takeoff coordinates");
 
-				struct position_setpoint_triplet_s *rep = get_reposition_triplet();
+			} else if (cmd.command == NAV_CMD_DO_CHANGE_SPEED) {
 
-				// store current position as previous position and goal as next
-				rep->previous.yaw = get_global_position()->yaw;
-				rep->previous.lat = get_global_position()->lat;
-				rep->previous.lon = get_global_position()->lon;
-				rep->previous.alt = get_global_position()->alt;
-
-				rep->current.loiter_radius = get_loiter_radius();
-				rep->current.loiter_direction = 1;
-				rep->current.type = position_setpoint_s::SETPOINT_TYPE_LOITER;
-
-				// Go on and check which changes had been requested
-				if (PX4_ISFINITE(cmd.param4)) {
-					rep->current.yaw = cmd.param4;
-				} else {
-					rep->current.yaw = NAN;
-				}
-
-				if (PX4_ISFINITE(cmd.param5) && PX4_ISFINITE(cmd.param6)) {
-					rep->current.lat = (cmd.param5 < 1000) ? cmd.param5 : cmd.param5 / (double)1e7;
-					rep->current.lon = (cmd.param6 < 1000) ? cmd.param6 : cmd.param6 / (double)1e7;
+				// XXX not differentiating ground and airspeed yet
+				if (cmd.param2 > 0.0f) {
+					set_cruising_speed(cmd.param2);
 
 				} else {
-					rep->current.lat = get_global_position()->lat;
-					rep->current.lon = get_global_position()->lon;
+					set_cruising_speed();
 				}
-
-				if (PX4_ISFINITE(cmd.param7)) {
-					rep->current.alt = cmd.param7;
-				} else {
-					rep->current.alt = get_global_position()->alt;
-				}
-
-				rep->previous.valid = true;
-				rep->current.valid = true;
-				rep->next.valid = false;
-			} else if (cmd.command == vehicle_command_s::VEHICLE_CMD_NAV_TAKEOFF) {
-				struct position_setpoint_triplet_s *rep = get_takeoff_triplet();
-
-				// store current position as previous position and goal as next
-				rep->previous.yaw = get_global_position()->yaw;
-				rep->previous.lat = get_global_position()->lat;
-				rep->previous.lon = get_global_position()->lon;
-				rep->previous.alt = get_global_position()->alt;
-
-				rep->current.loiter_radius = get_loiter_radius();
-				rep->current.loiter_direction = 1;
-				rep->current.type = position_setpoint_s::SETPOINT_TYPE_TAKEOFF;
-				rep->current.yaw = cmd.param4;
-
-				if (PX4_ISFINITE(cmd.param5) && PX4_ISFINITE(cmd.param6)) {
-					rep->current.lat = (cmd.param5 < 1000) ? cmd.param5 : cmd.param5 / (double)1e7;
-					rep->current.lon = (cmd.param6 < 1000) ? cmd.param6 : cmd.param6 / (double)1e7;
-				} else {
-					// If one of them is non-finite, reset both
-					rep->current.lat = NAN;
-					rep->current.lon = NAN;
-				}
-
-				rep->current.alt = cmd.param7;
-
-				rep->previous.valid = true;
-				rep->current.valid = true;
-				rep->next.valid = false;
-
-			} else if (cmd.command == vehicle_command_s::VEHICLE_CMD_DO_PAUSE_CONTINUE) {
-				warnx("navigator: got pause/continue command");
 			}
 		}
 
@@ -729,20 +672,47 @@ Navigator::get_altitude_acceptance_radius()
 	}
 }
 
-
+void
+Navigator::reset_cruising_speed()
+{
+	_mission_cruising_speed_mc = -1.0f;
+	_mission_cruising_speed_fw = -1.0f;
+}
 
 float
 Navigator::get_cruising_speed()
 {
 	/* there are three options: The mission-requested cruise speed, or the current hover / plane speed */
-	if (_mission_cruising_speed > 0.0f) {
-		return _mission_cruising_speed;
-	} else if (_vstatus.is_rotary_wing) {
-		return _param_cruising_speed_hover.get();
+	if (_vstatus.is_rotary_wing) {
+		if (_mission_cruising_speed_mc  > FLT_EPSILON
+		    && _vstatus.nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_MISSION) {
+
+			return _mission_cruising_speed_mc;
+
+		} else {
+			return _param_cruising_speed_hover.get();
+		}
+
 	} else {
-		return _param_cruising_speed_plane.get();
+		if (_mission_cruising_speed_fw > FLT_EPSILON
+ 		    && _vstatus.nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_MISSION) {
+			return _mission_cruising_speed_fw;
+
+		} else {
+			return _param_cruising_speed_plane.get();
+		}
 	}
 }
+
+void
+Navigator::set_cruising_speed(float speed) {
+	if (_vstatus.is_rotary_wing) {
+		_mission_cruising_speed_mc = speed;
+ 
+ 	} else {
+		_mission_cruising_speed_fw = speed;
+ 	}
+ }
 
 float
 Navigator::get_cruising_throttle()

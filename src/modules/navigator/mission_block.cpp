@@ -124,20 +124,7 @@ MissionBlock::is_mission_item_reached()
 			}
 
 		case NAV_CMD_DO_CHANGE_SPEED:
-			// XXX not differentiating ground and airspeed yet
-			if (_mission_item.params[1] > 0.0f) {
-				_navigator->set_cruising_speed(_mission_item.params[1]);
-			} else {
-				_navigator->set_cruising_speed();
-				/* if no speed target was given try to set throttle */
-				if (_mission_item.params[2] > 0.0f) {
-					_navigator->set_cruising_throttle(_mission_item.params[2] / 100);
-				} else {
-					_navigator->set_cruising_throttle();
-				}
-			}
-
-			return true;
+  			return true;
 
 		default:
 			/* do nothing, this is a 3D waypoint */
