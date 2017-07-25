@@ -134,6 +134,8 @@ then
 	cp $logfile $rootfs/replay.px4log
 fi
 
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${src_path}/src/modules/vtol_att_control/
+
 # Do not exit on failure now from here on because we want the complete cleanup
 set +e
 
