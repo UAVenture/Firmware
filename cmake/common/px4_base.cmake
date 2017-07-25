@@ -275,6 +275,118 @@ endfunction()
 
 #=============================================================================
 #
+#	px4_include_module
+#
+#	This function builds a static library from a module description.
+#
+#	Usage:
+#		px4_include_module(MODULE <string>
+#			[ MAIN <string> ]
+#			[ STACK <string> ] !!!!!DEPRECATED, USE STACK_MAIN INSTEAD!!!!!!!!!
+#			[ STACK_MAIN <string> ]
+#			[ STACK_MAX <string> ]
+#			[ LIB <string> ]
+#			[ INCLUDES <list> ]
+#			[ DEPENDS <string> ]
+#			)
+#
+#	Input:
+#		MODULE			: unique name of module
+#		MAIN			: entry point, if not given, assumed to be library
+#		STACK			: deprecated use stack main instead
+#		STACK_MAIN		: size of stack for main function
+#		STACK_MAX		: maximum stack size of any frame
+#		LIB			: library
+#		INCLUDES		: include directories
+#		DEPENDS			: targets which this module depends on
+#
+#	Output:
+#		Static library with name matching MODULE.
+#
+#	Example:
+#		px4_include_module(MODULE test
+#			LIB limbodule
+#			STACK_MAIN 1024
+#			DEPENDS
+#				git_nuttx
+#			)
+#
+function(px4_include_module)
+
+	px4_parse_function_args(
+		NAME px4_include_module
+		ONE_VALUE MODULE MAIN STACK STACK_MAIN STACK_MAX PRIORITY LIB
+		MULTI_VALUE INCLUDES DEPENDS
+		REQUIRED MODULE LIB
+		ARGN ${ARGN})
+
+	set(lib_file ${CMAKE_CURRENT_SOURCE_DIR}/${LIB})
+	if(${OS} STREQUAL "posix" )
+		set(lib_file ${lib_file}.so)
+	elseif(${OS} STREQUAL "nuttx" )
+		set(lib_file ${lib_file}.a)
+	endif()
+
+	# adding prebuilt static library
+	add_library(${MODULE} STATIC IMPORTED GLOBAL)
+	set_target_properties(${MODULE}
+		PROPERTIES
+		IMPORTED_LOCATION ${lib_file})
+
+	# set defaults if not set
+	set(MAIN_DEFAULT MAIN-NOTFOUND)
+	set(STACK_MAIN_DEFAULT 1024)
+	set(PRIORITY_DEFAULT SCHED_PRIORITY_DEFAULT)
+
+	# default stack max to stack main
+	if(NOT STACK_MAIN AND STACK)
+		set(STACK_MAIN ${STACK})
+		message(AUTHOR_WARNING "STACK deprecated, USE STACK_MAIN instead!")
+	endif()
+
+	foreach(property MAIN STACK_MAIN PRIORITY)
+		if(NOT ${property})
+			set(${property} ${${property}_DEFAULT})
+		endif()
+		set_target_properties(${MODULE} PROPERTIES ${property}
+			${${property}})
+	endforeach()
+
+	# default stack max to stack main
+	if(NOT STACK_MAX)
+		set(STACK_MAX ${STACK_MAIN})
+	endif()
+	set_target_properties(${MODULE} PROPERTIES STACK_MAX
+		${STACK_MAX})
+
+	if(MAIN)
+		set_target_properties(${MODULE} PROPERTIES
+			COMPILE_DEFINITIONS PX4_MAIN=${MAIN}_app_main)
+		add_definitions(-DMODULE_NAME="${MAIN}")
+	else()
+		add_definitions(-DMODULE_NAME="${MODULE}")
+	endif()
+
+	if(INCLUDES)
+		target_include_directories(${MODULE} PRIVATE ${INCLUDES})
+	endif()
+
+	if(DEPENDS)
+		add_dependencies(${MODULE} ${DEPENDS})
+	endif()
+
+	# store module properties in target
+	# STACK_MAIN, MAIN, PRIORITY are PX4 specific)
+	foreach (prop COMPILE_FLAGS LINK_FLAGS STACK_MAIN MAIN PRIORITY)
+		if (${prop})
+			set_target_properties(${MODULE} PROPERTIES ${prop} ${${prop}})
+		endif()
+	endforeach()
+
+endfunction()
+
+#=============================================================================
+#
 #	px4_add_common_flags
 #
 #	Set the default build flags.
