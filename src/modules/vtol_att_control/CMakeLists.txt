@@ -43,5 +43,7 @@ px4_add_module(
 		standard.cpp
 	DEPENDS
 		platforms__common
+	SHARED
 	)
+
 # vim: set noet ft=cmake fenc=utf-8 ff=unix :
