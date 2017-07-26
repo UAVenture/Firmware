@@ -35,6 +35,7 @@ px4_add_module(
 	MAIN vtol_att_control
 	STACK_MAIN 1300
 	COMPILE_FLAGS
+	LINK_FLAGS
 	SRCS
 		vtol_att_control_main.cpp
 		tiltrotor.cpp
@@ -45,5 +46,9 @@ px4_add_module(
 		platforms__common
 	SHARED
 	)
+
+# Resulting libraries get striped:
+# strip -R .comment -R .note -R .note.ABI-tag
+# arm-none-eabi-strip --strip-unneeded -R .comment -R .note -R .note.ABI-tag
 
 # vim: set noet ft=cmake fenc=utf-8 ff=unix :
