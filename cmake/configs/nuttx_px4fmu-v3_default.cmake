@@ -14,10 +14,10 @@ set(config_module_list
 	#
 	# Board support modules
 	#
-	drivers/adis16448
+	#drivers/adis16448
 	drivers/airspeed
 	drivers/blinkm
-	drivers/bmi160
+	#drivers/bmi160
 	drivers/bmp280
 	drivers/boards
 	drivers/bst

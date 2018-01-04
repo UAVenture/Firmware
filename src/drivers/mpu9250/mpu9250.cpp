@@ -1508,9 +1508,10 @@ MPU9250::measure()
 
 		/* NOTE: Axes have been swapped to match the board a few lines above. */
 
-		grb.x_raw = report.gyro_x;
+		// FIXME: add raw logging
+		/*grb.x_raw = report.gyro_x;
 		grb.y_raw = report.gyro_y;
-		grb.z_raw = report.gyro_z;
+		grb.z_raw = report.gyro_z;*/
 
 		float xraw_f = report.gyro_x;
 		float yraw_f = report.gyro_y;
@@ -1540,7 +1541,7 @@ MPU9250::measure()
 		grb.scaling = _gyro_range_scale;
 		grb.range_rad_s = _gyro_range_rad_s;
 
-		grb.temperature_raw = report.temp;
+		//grb.temperature_raw = report.temp;
 		grb.temperature = _last_temperature;
 
 		/* return device ID */

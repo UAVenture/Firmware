@@ -1839,9 +1839,9 @@ MavlinkReceiver::handle_message_hil_sensor(mavlink_message_t *msg)
 		struct gyro_report gyro = {};
 
 		gyro.timestamp = timestamp;
-		gyro.x_raw = imu.xgyro * 1000.0f;
+		/*gyro.x_raw = imu.xgyro * 1000.0f;
 		gyro.y_raw = imu.ygyro * 1000.0f;
-		gyro.z_raw = imu.zgyro * 1000.0f;
+		gyro.z_raw = imu.zgyro * 1000.0f;*/
 		gyro.x = imu.xgyro;
 		gyro.y = imu.ygyro;
 		gyro.z = imu.zgyro;

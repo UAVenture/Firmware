@@ -201,6 +201,7 @@ private:
 	unsigned		_sample_rate;
 	perf_counter_t		_sample_interval_accel;
 	perf_counter_t		_sample_interval_gyro;
+	perf_counter_t		_publish_interval_gyro;
 	perf_counter_t		_accel_reads;
 	perf_counter_t		_gyro_reads;
 	perf_counter_t		_sample_perf;
@@ -464,6 +465,7 @@ protected:
 private:
 	MPU6000			*_parent;
 	orb_advert_t		_gyro_topic;
+	orb_advert_t		_gyro_control_topic;
 	int			_gyro_orb_class_instance;
 	int			_gyro_class_instance;
 
@@ -504,6 +506,7 @@ MPU6000::MPU6000(device::Device *interface, const char *path_accel, const char *
 	_sample_rate(MPU6000_GYRO_DEFAULT_RATE),
 	_sample_interval_accel(perf_alloc(PC_INTERVAL, "mpu6k_sample_interval_accel")),
 	_sample_interval_gyro(perf_alloc(PC_INTERVAL, "mpu6k_sample_interval_gyro")),
+	_publish_interval_gyro(perf_alloc(PC_INTERVAL, "mpu6k_publish_interval_gyro")),
 	_accel_reads(perf_alloc(PC_COUNT, "mpu6k_acc_read")),
 	_gyro_reads(perf_alloc(PC_COUNT, "mpu6k_gyro_read")),
 	_sample_perf(perf_alloc(PC_ELAPSED, "mpu6k_read")),
@@ -615,6 +618,7 @@ MPU6000::~MPU6000()
 	/* delete the perf counter */
 	perf_free(_sample_interval_accel);
 	perf_free(_sample_interval_gyro);
+	perf_free(_publish_interval_gyro);
 	perf_free(_sample_perf);
 	perf_free(_accel_reads);
 	perf_free(_gyro_reads);
@@ -751,7 +755,11 @@ MPU6000::init()
 	_gyro_reports->get(&grp);
 
 	_gyro->_gyro_topic = orb_advertise_multi(ORB_ID(sensor_gyro), &grp,
-			     &_gyro->_gyro_orb_class_instance, (is_external()) ? ORB_PRIO_MAX : ORB_PRIO_HIGH);
+			     &_gyro->_gyro_orb_class_instance, ((is_external()) ? ORB_PRIO_MAX : ORB_PRIO_HIGH) - 1);
+
+	struct gyro_control_report control_report = {};
+	_gyro->_gyro_control_topic = orb_advertise_multi(ORB_ID(sensor_gyro_control), &control_report,
+				     &_gyro->_gyro_orb_class_instance, (is_external()) ? ORB_PRIO_MAX : ORB_PRIO_HIGH);
 
 	if (_gyro->_gyro_topic == nullptr) {
 		PX4_WARN("ADVERT FAIL");
@@ -2064,11 +2072,13 @@ MPU6000::measure()
 		 * Report buffers.
 		 */
 		gyro_report		grb;
+		gyro_control_report 	control_report;
 
 		/*
 		 * Adjust and scale results to m/s^2.
 		 */
 		grb.timestamp = stamp;
+		control_report.timestamp = stamp;
 
 		// report the error count as the sum of the number of bad
 		// transfers and bad register reads. This allows the higher
@@ -2094,9 +2104,10 @@ MPU6000::measure()
 
 		/* NOTE: Axes have been swapped to match the board a few lines above. */
 
-		grb.x_raw = report.gyro_x;
+		// FIXME: add raw logging
+		/*grb.x_raw = report.gyro_x;
 		grb.y_raw = report.gyro_y;
-		grb.z_raw = report.gyro_z;
+		grb.z_raw = report.gyro_z;*/
 
 		float xraw_f = report.gyro_x;
 		float yraw_f = report.gyro_y;
@@ -2116,6 +2127,10 @@ MPU6000::measure()
 		grb.y = _gyro_filter_y.apply(gval(1));
 		grb.z = _gyro_filter_z.apply(gval(2));
 
+		control_report.x = grb.x;
+		control_report.y = grb.y;
+		control_report.z = grb.z;
+
 		math::Vector<3> gval_integrated;
 
 		bool gyro_notify = _gyro_int.put(grb.timestamp, gval, gval_integrated, grb.integral_dt);
@@ -2126,11 +2141,12 @@ MPU6000::measure()
 		grb.scaling = _gyro_range_scale;
 		grb.range_rad_s = _gyro_range_rad_s;
 
-		grb.temperature_raw = report.temp;
+		//grb.temperature_raw = report.temp;
 		grb.temperature = _last_temperature;
 
 		/* return device ID */
 		grb.device_id = _gyro->_device_id.devid;
+		control_report.device_id = grb.device_id;
 
 		_gyro_reports->force(&grb);
 
@@ -2140,9 +2156,13 @@ MPU6000::measure()
 		}
 
 		if (gyro_notify && !(_pub_blocked)) {
-			/* publish it */
+			perf_count(_publish_interval_gyro);
+			/* publish normal report when integrator is reset */
 			orb_publish(ORB_ID(sensor_gyro), _gyro->_gyro_topic, &grb);
 		}
+
+		/* publish control report on every sample */
+		orb_publish(ORB_ID(sensor_gyro_control), _gyro->_gyro_control_topic, &control_report);
 	}
 
 	/* stop measuring */
@@ -2155,6 +2175,7 @@ MPU6000::print_info()
 {
 	perf_print_counter(_sample_interval_accel);
 	perf_print_counter(_sample_interval_gyro);
+	perf_print_counter(_publish_interval_gyro);
 	perf_print_counter(_sample_perf);
 	perf_print_counter(_accel_reads);
 	perf_print_counter(_gyro_reads);
@@ -2532,14 +2553,14 @@ test(enum MPU6000_BUS busid)
 	warnx("gyro x: \t% 9.5f\trad/s", (double)g_report.x);
 	warnx("gyro y: \t% 9.5f\trad/s", (double)g_report.y);
 	warnx("gyro z: \t% 9.5f\trad/s", (double)g_report.z);
-	warnx("gyro x: \t%d\traw", (int)g_report.x_raw);
+	/*warnx("gyro x: \t%d\traw", (int)g_report.x_raw);
 	warnx("gyro y: \t%d\traw", (int)g_report.y_raw);
-	warnx("gyro z: \t%d\traw", (int)g_report.z_raw);
+	warnx("gyro z: \t%d\traw", (int)g_report.z_raw);*/
 	warnx("gyro range: %8.4f rad/s (%d deg/s)", (double)g_report.range_rad_s,
 	      (int)((g_report.range_rad_s / M_PI_F) * 180.0f + 0.5f));
 
 	warnx("temp:  \t%8.4f\tdeg celsius", (double)a_report.temperature);
-	warnx("temp:  \t%d\traw 0x%0x", (short)a_report.temperature_raw, (unsigned short)a_report.temperature_raw);
+	//warnx("temp:  \t%d\traw 0x%0x", (short)a_report.temperature_raw, (unsigned short)a_report.temperature_raw);
 
 	/* reset to default polling */
 	if (ioctl(fd, SENSORIOCSPOLLRATE, SENSOR_POLLRATE_DEFAULT) < 0) {
